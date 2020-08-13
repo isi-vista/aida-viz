@@ -2,7 +2,7 @@
 
 # AIDA Vizualization Tools
 
-This repository contains the package `aida_viz`, a tool for visualizing "hypotheses" (from AIDA TA3) in a simple HTML format. It is provided as-is, with no guarantee that it supports your particular use case.
+This repository contains the package `aida_viz`, a tool for visualizing "hypotheses" (from AIDA TA3) in a simple HTML format.
 
 ## Installation
 
