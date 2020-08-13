@@ -1,5 +1,6 @@
+from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
 from attr import attrib, attrs
@@ -16,18 +17,26 @@ from vistautils.misc_utils import flatten_once_to_list
 from .documents import render_html
 
 # Typing aliases
+Justification = Tuple[str, str, int, int]
+MemberData = Tuple[URIRef, ImmutableSet[str], ImmutableSet[str]]
 Cluster = Tuple[
     URIRef,
     URIRef,
     URIRef,
-    Tuple[str, str, int, int],
+    Justification,
     URIRef,
     URIRef,
     ImmutableSet[str],
     ImmutableSet[str],
     ImmutableSet[str],
-    Tuple[str, str, int, int],
+    Justification,
 ]
+
+LOCATED_NEAR = "Physical.LocatedNear"
+MOVEMENT_TRANSPORT = "Movement.Transport"
+ORG_AFFILIATION = "OrganizationAffiliation"
+PLACE_PREDICATE = "Place"
+PLACE_TYPES = {"FAC", "GPE", "LOC"}
 
 
 @attrs(frozen=True, slots=True)
@@ -73,17 +82,6 @@ class Hypothesis:
     @staticmethod
     def from_graph(graph: Graph) -> "Hypothesis":
         all_clusters = sorted(graph.subjects(RDF.type, AIDA_ANNOTATION.SameAsCluster))
-        event_clusters = immutableset(
-            [
-                cluster
-                for cluster in all_clusters
-                if all(
-                    (event, RDF.type, AIDA_ANNOTATION.Event) in graph
-                    for event in _entities_in_cluster(graph, cluster)
-                )
-            ]
-        )
-        events = _parse_clusters(event_clusters, graph)
 
         relation_clusters = immutableset(
             sorted(
@@ -98,6 +96,18 @@ class Hypothesis:
             )
         )
         relations = _parse_clusters(relation_clusters, graph)
+
+        event_clusters = immutableset(
+            [
+                cluster
+                for cluster in all_clusters
+                if all(
+                    (event, RDF.type, AIDA_ANNOTATION.Event) in graph
+                    for event in _entities_in_cluster(graph, cluster)
+                )
+            ]
+        )
+        events = _parse_clusters(event_clusters, graph, relations)
 
         return Hypothesis(
             name=graph.value(predicate=RDF.type, object=AIDA_ANNOTATION.Hypothesis),
@@ -209,9 +219,11 @@ def _render_cluster(
 
 
 def _parse_clusters(
-    clusters: ImmutableSet[URIRef], graph: Graph
+    clusters: ImmutableSet[URIRef], graph: Graph, relations: ImmutableSet[Cluster] = None
 ) -> ImmutableSet[Cluster]:
     parsed_clusters = []
+    grouped_clusters: Dict[URIRef, List[Cluster]] = defaultdict(list)
+
     for cluster in clusters:
         cluster_prototype = graph.value(
             subject=cluster, predicate=AIDA_ANNOTATION.prototype, any=False
@@ -292,22 +304,167 @@ def _parse_clusters(
                             "a broken link. Please contact one of the maintainers of this "
                             "reposoitory for more details or to fix this issue."
                         )
+                    parsed_member = (
+                        cluster,
+                        cluster_type,
+                        cluster_member,
+                        cluster_member_informative_justification,
+                        predicate_type,
+                        object_node,
+                        immutableset(rendered_object_types),
+                        immutableset(object_names),
+                        immutableset(object_handles),
+                        informative_justification,
+                    )
+                    parsed_clusters.append(parsed_member)
+                    grouped_clusters[cluster].append(parsed_member)
+
+    # Handle missing Place arguments for events
+    if relations:
+
+        # Group relation members by relation
+        # while filtering out irrelevant ones
+        relation_members_by_relation: Dict[URIRef, List[Cluster]] = defaultdict(list)
+        docs_to_locations: Dict[str, List[Justification]] = defaultdict(list)
+        locations_to_data = {}
+        for relation in relations:
+            relation_type = relation[1].split("#")[-1]
+            predicate_type = relation[4].split("_")[-1]
+            if relation_type == LOCATED_NEAR:
+                relation_members_by_relation[relation[0]].append(relation)
+                # Create list of places for potential use later
+                if predicate_type.split("_")[-1] == PLACE_PREDICATE:
+                    docs_to_locations[relation[9][1]].append(relation[9])
+                    locations_to_data[relation[9]] = (
+                        relation[5],
+                        relation[6],
+                        relation[7],
+                        relation[8]
+                    )
+            elif relation_type.startswith(ORG_AFFILIATION):
+                relation_members_by_relation[relation[0]].append(relation)
+
+        # For each event cluster, try to identify the Place based on
+        # relations, existing arguments, or trends in the document
+        # if there is no Place argument filler already.
+        for cluster in grouped_clusters.values():
+            cluster_predicates = {member[4].split("_")[-1] for member in cluster}
+            cluster_type = cluster[0][1].split("#")[-1]
+            if (
+                PLACE_PREDICATE not in cluster_predicates
+                and MOVEMENT_TRANSPORT not in cluster_type
+            ):
+                location_from_relation = _get_place_from_relation_or_argument(
+                    cluster, relation_members_by_relation
+                )
+                if location_from_relation:
+                    parsed_clusters.append(location_from_relation)
+                else:
+                    # As a final resort, choose the most frequently used location in the document;
+                    # this assumes that there is at least one location
+                    # identified in the given document.
+                    # For now, grab the document from the first informative justification.
+                    cluster_doc = cluster[0][9][1]
+                    doc_locations = Counter(docs_to_locations[cluster_doc])
+                    top_location = doc_locations.most_common(1)[0][0]
+                    top_location_info = locations_to_data[top_location]
+
                     parsed_clusters.append(
                         (
-                            cluster,
-                            cluster_type,
-                            cluster_member,
-                            cluster_member_informative_justification,
-                            predicate_type,
-                            object_node,
-                            immutableset(rendered_object_types),
-                            immutableset(object_names),
-                            immutableset(object_handles),
-                            informative_justification,
+                            cluster[0][0],
+                            cluster[0][1],
+                            cluster[0][2],
+                            cluster[0][3],
+                            cluster[0][1] + "_" + PLACE_PREDICATE,
+                            top_location_info[0],
+                            top_location_info[1],
+                            top_location_info[2],
+                            top_location_info[3],
+                            top_location,
                         )
                     )
 
     return immutableset(parsed_clusters)
+
+
+def _get_place_from_relation_or_argument(
+    event_cluster: List[Cluster], relation_groups: Dict[URIRef, List[Cluster]]
+) -> Optional[Cluster]:
+    """
+    Attempts to find a location that is related to a
+    cluster entity
+    If there is no linked "place" relation, it will attempt to
+    use an existing argument filler. For example, if the Target
+    of a Conflict.Attack event is a GPE, it may be used as the
+    Place for that event.
+    TODO: prioritize certain arguments;
+    for example, an Attacker of a Conflict.Attack event is less
+    likely to be the location of the event
+    Returns None if no matching location relation is found.
+    """
+    location_clusters = []
+    affiliation_clusters = []
+    for relation_cluster in relation_groups.values():
+        for relation_member in relation_cluster:
+            relation_type_string = relation_member[1].split("#")[-1]
+            if relation_type_string == LOCATED_NEAR:
+                for member in event_cluster:
+                    if relation_member[9] == member[9]:
+                        if relation_member[3] == member[3]:
+                            # If both justifications match, use that relation.
+                            # Find the corresponding Place argument
+                            # in this "matching" cluster.
+                            for place_relation_member in relation_cluster:
+                                relation_predicate = place_relation_member[4].split("_")[
+                                    -1
+                                ]
+                                if relation_predicate == PLACE_PREDICATE:
+                                    return _create_place_cluster(
+                                        member, place_relation_member
+                                    )
+                        else:
+                            # Else, save it to possibly examine later
+                            location_clusters.append(relation_cluster)
+            elif relation_type_string.startswith(ORG_AFFILIATION):
+                for member in event_cluster:
+                    if relation_member[9] == member[9]:
+                        affiliation_clusters.append(relation_cluster)
+    member = event_cluster[0]  # we just need the event cluster info here
+    # We want to prioritize LocatedNear relations
+    if location_clusters:
+        # TODO: a method for selecting a relation if there are more than two clusters
+        # For now we're just grabbing the first relation cluster.
+        for place_relation_member in location_clusters[0]:
+            relation_predicate = place_relation_member[4].split("_")[-1]
+            if relation_predicate == PLACE_PREDICATE:
+                return _create_place_cluster(member, place_relation_member)
+    elif affiliation_clusters:
+        for relation_member in affiliation_clusters[0]:
+            for object_type in relation_member[6]:
+                if any(loc_type in object_type for loc_type in PLACE_TYPES):
+                    return _create_place_cluster(member, relation_member)
+    # If no matching relation is found, see if a Place can
+    # be extracted from an event argument.
+    for member in event_cluster:
+        for object_type in member[6]:
+            if any(location_type in object_type for location_type in PLACE_TYPES):
+                return _create_place_cluster(member, member)
+    return None
+
+
+def _create_place_cluster(cluster_member: Cluster, relation_member: Cluster) -> Cluster:
+    return (
+        cluster_member[0],
+        cluster_member[1],
+        cluster_member[2],
+        cluster_member[3],
+        cluster_member[1] + "_" + PLACE_PREDICATE,
+        relation_member[5],
+        relation_member[6],
+        relation_member[7],
+        relation_member[8],
+        relation_member[9]
+    )
 
 
 def _get_informative_justification(
