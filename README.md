@@ -6,19 +6,19 @@ This repository contains the package `aida_viz`, a tool for visualizing "hypothe
 
 ## Installation
 
-Install `aida_viz` by cloning this repository and running `pip install <repository location>`.
+Install `aida_viz` by downloading this repository and running `pip install $AIDA_VIZ_REPO`, where `$AIDA_VIZ_REPO` is the top-level directory of this repository.
 
 We recommend the use of a virtual environment manager, such as [`conda`](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) or [`virtualenv`](https://virtualenv.pypa.io/en/latest/).
 
 ## Usage
 
-To generate visualizations, `aida_viz` requires a small (<1gb) SQLite database file containing the text documents found in the AIDA Phase 1 Evaluation Source Data, `LDC2019E42` (download available via the [LDC Catalog](catalog.ldc.upenn.edu)).
+To generate visualizations, `aida_viz` requires a small (<1gb) SQLite database file containing the text documents found in the AIDA Phase 1 Evaluation Source Data, `LDC2019E42` (download available via the [LDC Catalog](https://catalog.ldc.upenn.edu)).
 
 **The easiest way to obtain this SQLite database file is to contact the maintainers of this repository and request it from them.** However, it is possible to generate the database from the original LDC source data.
 
 ### Generating the Database
 
-If you have obtained the SQLite database file from this repository's maintainers, skip this section.
+**Skip this section** if you have obtained the SQLite database file from this repository's maintainers.
 
 Generating the database from the LDC-provided `.tgz` file is a two-step process: 
 
