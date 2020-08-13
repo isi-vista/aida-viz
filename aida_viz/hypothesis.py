@@ -32,11 +32,15 @@ Cluster = Tuple[
     Justification,
 ]
 
+CONTACT = "Contact"
+ENTITY_PREDICATE = "EntityOrFiller"
 LOCATED_NEAR = "Physical.LocatedNear"
 MOVEMENT_TRANSPORT = "Movement.Transport"
 ORG_AFFILIATION = "OrganizationAffiliation"
+PART_WHOLE = "PartWhole"
 PLACE_PREDICATE = "Place"
 PLACE_TYPES = {"FAC", "GPE", "LOC"}
+SPONSORSHIP = "GeneralAffiliation.Sponsorship"
 
 
 @attrs(frozen=True, slots=True)
@@ -325,8 +329,11 @@ def _parse_clusters(
         # Group relation members by relation
         # while filtering out irrelevant ones
         relation_members_by_relation: Dict[URIRef, List[Cluster]] = defaultdict(list)
+        # I'm assuming that input hypothesis files normally link to
+        # more than one document
         docs_to_locations: Dict[str, List[Justification]] = defaultdict(list)
         locations_to_data = {}
+        location_map: Dict[Justification, Justification] = {}
         for relation in relations:
             relation_type = relation[1].split("#")[-1]
             predicate_type = relation[4].split("_")[-1]
@@ -341,8 +348,26 @@ def _parse_clusters(
                         relation[7],
                         relation[8]
                     )
-            elif relation_type.startswith(ORG_AFFILIATION):
+            elif (
+                    relation_type.startswith(PART_WHOLE)
+                    or relation_type.startswith(ORG_AFFILIATION)
+                    or relation_type == SPONSORSHIP
+            ):
                 relation_members_by_relation[relation[0]].append(relation)
+        # Create map from locations to broader areas
+        for relation_cluster in relation_members_by_relation.values():
+            relation_place = None
+            relation_entity = None
+            for relation in relation_cluster:
+                predicate_type = relation[4].split("_")[-1]
+                if predicate_type == ENTITY_PREDICATE:
+                    for object_type in relation[6]:
+                        if any(loc_type in object_type for loc_type in PLACE_TYPES):
+                            relation_entity = relation[9]
+                elif predicate_type == PLACE_PREDICATE:
+                    relation_place = relation[9]
+            if relation_place and relation_entity:
+                location_map[relation_entity] = relation_place
 
         # For each event cluster, try to identify the Place based on
         # relations, existing arguments, or trends in the document
@@ -355,19 +380,21 @@ def _parse_clusters(
                 and MOVEMENT_TRANSPORT not in cluster_type
             ):
                 location_from_relation = _get_place_from_relation_or_argument(
-                    cluster, relation_members_by_relation
+                    cluster, cluster_type, relation_members_by_relation
                 )
                 if location_from_relation:
                     parsed_clusters.append(location_from_relation)
                 else:
-                    # As a final resort, choose the most frequently used location in the document;
-                    # this assumes that there is at least one location
+                    # As a final resort, choose the most frequently used location in the document
+                    # and find its broadest location to use as the default Place.
+                    # This assumes that there is at least one location
                     # identified in the given document.
                     # For now, grab the document from the first informative justification.
                     cluster_doc = cluster[0][9][1]
                     doc_locations = Counter(docs_to_locations[cluster_doc])
-                    top_location = doc_locations.most_common(1)[0][0]
-                    top_location_info = locations_to_data[top_location]
+                    most_common_location = doc_locations.most_common(1)[0][0]
+                    default_location = _get_higher_level_location(most_common_location, location_map)
+                    default_location_info = locations_to_data[default_location]
 
                     parsed_clusters.append(
                         (
@@ -376,11 +403,11 @@ def _parse_clusters(
                             cluster[0][2],
                             cluster[0][3],
                             cluster[0][1] + "_" + PLACE_PREDICATE,
-                            top_location_info[0],
-                            top_location_info[1],
-                            top_location_info[2],
-                            top_location_info[3],
-                            top_location,
+                            default_location_info[0],
+                            default_location_info[1],
+                            default_location_info[2],
+                            default_location_info[3],
+                            default_location,
                         )
                     )
 
@@ -388,7 +415,9 @@ def _parse_clusters(
 
 
 def _get_place_from_relation_or_argument(
-    event_cluster: List[Cluster], relation_groups: Dict[URIRef, List[Cluster]]
+    event_cluster: List[Cluster],
+    cluster_type: str,
+    relation_groups: Dict[URIRef, List[Cluster]]
 ) -> Optional[Cluster]:
     """
     Attempts to find a location that is related to a
@@ -397,12 +426,13 @@ def _get_place_from_relation_or_argument(
     use an existing argument filler. For example, if the Target
     of a Conflict.Attack event is a GPE, it may be used as the
     Place for that event.
-    TODO: prioritize certain arguments;
+    TODO: prioritize certain arguments?
     for example, an Attacker of a Conflict.Attack event is less
     likely to be the location of the event
     Returns None if no matching location relation is found.
     """
     location_clusters = []
+    part_whole_clusters = []
     affiliation_clusters = []
     for relation_cluster in relation_groups.values():
         for relation_member in relation_cluster:
@@ -425,7 +455,17 @@ def _get_place_from_relation_or_argument(
                         else:
                             # Else, save it to possibly examine later
                             location_clusters.append(relation_cluster)
+            elif relation_type_string.startswith(PART_WHOLE):
+                for member in event_cluster:
+                    if relation_member[9] == member[9]:
+                        part_whole_clusters.append(relation_cluster)
             elif relation_type_string.startswith(ORG_AFFILIATION):
+                for member in event_cluster:
+                    if relation_member[9] == member[9]:
+                        affiliation_clusters.append(relation_cluster)
+            elif relation_type_string == SPONSORSHIP and cluster_type.startswith(CONTACT):
+                # Contact events can be particularly difficult to locate,
+                # though a Sponsorship relation may hold a communicator's location.
                 for member in event_cluster:
                     if relation_member[9] == member[9]:
                         affiliation_clusters.append(relation_cluster)
@@ -438,11 +478,18 @@ def _get_place_from_relation_or_argument(
             relation_predicate = place_relation_member[4].split("_")[-1]
             if relation_predicate == PLACE_PREDICATE:
                 return _create_place_cluster(member, place_relation_member)
-    elif affiliation_clusters:
-        for relation_member in affiliation_clusters[0]:
-            for object_type in relation_member[6]:
-                if any(loc_type in object_type for loc_type in PLACE_TYPES):
-                    return _create_place_cluster(member, relation_member)
+    if part_whole_clusters:
+        for part_whole_relation in part_whole_clusters:
+            for relation_member in part_whole_relation:
+                for object_type in relation_member[6]:
+                    if any(loc_type in object_type for loc_type in PLACE_TYPES):
+                        return _create_place_cluster(member, relation_member)
+    if affiliation_clusters:
+        for affiliation_relation in affiliation_clusters:
+            for relation_member in affiliation_relation:
+                for object_type in relation_member[6]:
+                    if any(loc_type in object_type for loc_type in PLACE_TYPES):
+                        return _create_place_cluster(member, relation_member)
     # If no matching relation is found, see if a Place can
     # be extracted from an event argument.
     for member in event_cluster:
@@ -450,6 +497,16 @@ def _get_place_from_relation_or_argument(
             if any(location_type in object_type for location_type in PLACE_TYPES):
                 return _create_place_cluster(member, member)
     return None
+
+
+def _get_higher_level_location(
+        sublocation: Justification, location_map: Dict[Justification, Justification]
+) -> Justification:
+    """
+    Use the location map to find the broadest reference to a place.
+    """
+    location = location_map.get(sublocation)
+    return _get_higher_level_location(location, location_map) if location else sublocation
 
 
 def _create_place_cluster(cluster_member: Cluster, relation_member: Cluster) -> Cluster:
