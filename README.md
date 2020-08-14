@@ -6,9 +6,11 @@ This repository contains the package `aida_viz`, a tool for visualizing "hypothe
 
 ## Installation
 
+We recommend setting up a virtual environment for managing dependencies by using tools such as [`conda`](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) or [`virtualenv`](https://virtualenv.pypa.io/en/latest/).
+
 Install `aida_viz` by downloading this repository and running `pip install $AIDA_VIZ_REPO`, where `$AIDA_VIZ_REPO` is the top-level directory of this repository.
 
-We recommend the use of a virtual environment manager, such as [`conda`](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) or [`virtualenv`](https://virtualenv.pypa.io/en/latest/).
+You will also need to manually install the Python package included in the [AIDA Interchange Format repository](https://github.com/NextCenturyCorporation/AIDA-Interchange-Format) (you do not need the Java installation).
 
 ## Usage
 
