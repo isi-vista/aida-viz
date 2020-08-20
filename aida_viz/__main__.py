@@ -16,9 +16,12 @@ def main(aif_file: Path, out_dir: Path, db_path: Path, verbose: bool) -> Path:
     else:
         output_file = out_dir / f"{aif_file.stem}_visualization.html"
     output_file.touch(exist_ok=True)
+    output_hypothesis = out_dir / f"{aif_file.stem}_augmented.ttl"
+    output_hypothesis.touch(exist_ok=True)
 
-    hypothesis = Hypothesis.from_graph(graph)
+    hypothesis, augmented_graph = Hypothesis.from_graph(graph)
     hypothesis.visualize(out_dir, output_file, db_path, verbose)
+    augmented_graph.serialize(destination=str(output_hypothesis), format="turtle")
 
     return output_file
 
