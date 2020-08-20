@@ -25,18 +25,6 @@ from .documents import render_html
 
 # Typing aliases
 Justification = Tuple[str, str, int, int]
-Cluster = Tuple[
-    URIRef,
-    URIRef,
-    URIRef,
-    Justification,
-    URIRef,
-    URIRef,
-    ImmutableSet[str],
-    ImmutableSet[str],
-    ImmutableSet[str],
-    Justification,
-]
 
 CONTACT = "Contact"
 ENTITY_PREDICATE = "EntityOrFiller"
@@ -50,38 +38,55 @@ SPONSORSHIP = "GeneralAffiliation.Sponsorship"
 
 
 @attrs(frozen=True, slots=True)
+class ClusterMember:
+
+    cluster: URIRef = attrib(validator=instance_of(URIRef))
+    cluster_type: URIRef = attrib(validator=instance_of(URIRef))
+    cluster_member: URIRef = attrib(validator=instance_of(URIRef))
+    cluster_member_informative_justification: Justification = attrib()
+    predicate_type: URIRef = attrib(validator=instance_of(URIRef))
+    object_node: URIRef = attrib(validator=instance_of(URIRef))
+    rendered_object_types: ImmutableSet[str] = attrib(converter=immutableset)
+    object_names: ImmutableSet[str] = attrib(converter=immutableset)
+    object_handles: ImmutableSet[str] = attrib(converter=immutableset)
+    informative_justification: Justification = attrib()
+
+
+@attrs(frozen=True, slots=True)
 class Hypothesis:
     _name: str = attrib(converter=str)
-    _events: ImmutableSet[Cluster] = attrib()
-    _relations: ImmutableSet[Cluster] = attrib()
+    _events: ImmutableSet[ClusterMember] = attrib()
+    _relations: ImmutableSet[ClusterMember] = attrib()
 
     @property
-    def event_by_cluster(self) -> ImmutableDict[URIRef, List[Cluster]]:
+    def event_by_cluster(self) -> ImmutableDict[URIRef, List[ClusterMember]]:
         return self._by_cluster(self._events)
 
     @property
-    def relation_by_cluster(self) -> ImmutableDict[URIRef, List[Cluster]]:
+    def relation_by_cluster(self) -> ImmutableDict[URIRef, List[ClusterMember]]:
         return self._by_cluster(self._relations)
 
     @property
     def event_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [event[:2] for event in self._events]
-        )  # id/type are the 1/2nd items in the tuple
+            [(event.cluster, event.cluster_type) for event in self._events]
+        )
 
     @property
     def relation_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [relation[:2] for relation in self._relations]
-        )  # id/type are the 1/2nd items in the tuple
+            [(relation.cluster, relation.cluster_type) for relation in self._relations]
+        )
 
     @staticmethod
     def _by_cluster(
-        items: ImmutableSet[Cluster]
-    ) -> ImmutableDict[URIRef, List[Cluster]]:
-        _item_by_cluster: Dict[URIRef, List[Cluster]] = defaultdict(list)
+        items: ImmutableSet[ClusterMember]
+    ) -> ImmutableDict[URIRef, List[ClusterMember]]:
+        _item_by_cluster: Dict[URIRef, List[ClusterMember]] = defaultdict(list)
         for event in items:
-            cluster = event[0]  # the first member of the tuple is the cluster-level id
+            cluster = (
+                event.cluster
+            )  # the first member of the tuple is the cluster-level id
             _item_by_cluster[cluster].append(
                 event
             )  # cluster-level id/type are at indices 0/1
@@ -164,58 +169,23 @@ class Hypothesis:
             output.write("\n".join(output_lines))
 
 
-@attrs(frozen=True, slots=True)
-class ClusterMember:
-    """
-    Certain attributes are used for creating new rdf triples
-    """
-
-    cluster: URIRef = attrib(validator=instance_of(URIRef))
-    cluster_type: URIRef = attrib(validator=instance_of(URIRef))
-    cluster_member: URIRef = attrib(validator=instance_of(URIRef))
-    cluster_member_informative_justification: Justification = attrib()
-    predicate_type: URIRef = attrib(validator=instance_of(URIRef))
-    object_node: URIRef = attrib(validator=instance_of(URIRef))
-    informative_justification: Justification = attrib()
-    rendered_object_types: ImmutableSet[str] = attrib(converter=immutableset)
-    object_names: ImmutableSet[str] = attrib(converter=immutableset)
-    object_handles: ImmutableSet[str] = attrib(converter=immutableset)
-
-    def get_cluster_tuple(self) -> Cluster:
-        return (
-            self.cluster,
-            self.cluster_type,
-            self.cluster_member,
-            self.cluster_member_informative_justification,
-            self.predicate_type,
-            self.object_node,
-            self.rendered_object_types,
-            self.object_names,
-            self.object_handles,
-            self.informative_justification,
-        )
-
-
 def _render_cluster(
-    items: Iterable[Cluster], output_dir: Path, db_path: Path, verbose: bool
+    items: Iterable[ClusterMember], output_dir: Path, db_path: Path, verbose: bool
 ) -> List[str]:
     output_lines = []
 
     current_cluster_member_id = None
     for relation in sorted(
-        items, key=lambda i: (i[2], i[3])
+        items, key=lambda i: (i.cluster_member, i.predicate_type)
     ):  # sort first by cluster, then by predicate
-        _, _, cluster_member_id, cluster_member_informative_justification, predicate_type, _, object_types, object_names, object_handles, informative_justification = (
-            relation
-        )
 
         # form sub-lists at the beginning of each new cluster
-        if cluster_member_id != current_cluster_member_id:
+        if relation.cluster_member != current_cluster_member_id:
             if current_cluster_member_id is not None:
                 output_lines.append("</ul>")
-            current_cluster_member_id = cluster_member_id
+            current_cluster_member_id = relation.cluster_member
             _, cluster_member_informative_justification_link = _get_informative_justification_link(
-                db_path, output_dir, cluster_member_informative_justification
+                db_path, output_dir, relation.cluster_member_informative_justification
             )
             output_lines.append("<li>")
             output_lines.append(
@@ -223,10 +193,10 @@ def _render_cluster(
             )
             output_lines.append("<ul>")
 
-        predicate_type_rendered = predicate_type.split("_")[-1]
+        predicate_type_rendered = relation.predicate_type.split("_")[-1]
         output_lines.append(f"<li><u>{predicate_type_rendered}:</u>")
         mention, informative_justification_link = _get_informative_justification_link(
-            db_path, output_dir, informative_justification
+            db_path, output_dir, relation.informative_justification
         )
         if verbose:
             # Currently this program is written to expect the informative justification to exist.
@@ -237,18 +207,22 @@ def _render_cluster(
                 f"<li><b>informativeJustification</b>: <a href={informative_justification_link}>{mention}</a></li>"
             )
             output_lines.append(
-                f'<li><b>hasName</b>: {", ".join(object_names) or "Nothing found"}</li>'
+                f'<li><b>hasName</b>: {", ".join(relation.object_names) or "Nothing found"}</li>'
             )
             output_lines.append(
-                f'<li><b>handle</b>: {", ".join(object_handles) or "Nothing found"}</li>'
+                f'<li><b>handle</b>: {", ".join(relation.object_handles) or "Nothing found"}</li>'
             )
             output_lines.append(
-                f'<li><b>"type"</b>: {", ".join(object_types) or "Nothing found"}</li>'
+                f'<li><b>"type"</b>: {", ".join(relation.rendered_object_types) or "Nothing found"}</li>'
             )
             output_lines.append("</ul>")
         else:
             object_line = f"<a href={informative_justification_link}>{mention}</a>"
-            identifier_list = [*object_names, *object_handles, *object_types]
+            identifier_list = [
+                *relation.object_names,
+                *relation.object_handles,
+                *relation.rendered_object_types,
+            ]
             if mention.split()[0] in identifier_list:
                 identifier_list.remove(mention.split()[0])
             identifiers = immutableset(identifier_list)
@@ -264,8 +238,8 @@ def _render_cluster(
 def _parse_clusters(
     clusters: ImmutableSet[URIRef],
     graph: Graph,
-    relations: ImmutableSet[Cluster] = None,
-) -> Tuple[ImmutableSet[Cluster], Optional[Graph]]:
+    relations: ImmutableSet[ClusterMember] = None,
+) -> Tuple[ImmutableSet[ClusterMember], Optional[Graph]]:
     parsed_clusters = []
     events_by_cluster: Dict[URIRef, List[ClusterMember]] = defaultdict(list)
 
@@ -354,12 +328,12 @@ def _parse_clusters(
                         cluster_member_informative_justification,
                         predicate_type,
                         object_node,
-                        informative_justification,
                         immutableset(rendered_object_types),  # type: ignore
                         immutableset(object_names),  # type: ignore
                         immutableset(object_handles),  # type: ignore
+                        informative_justification,
                     )
-                    parsed_clusters.append(parsed_member.get_cluster_tuple())
+                    parsed_clusters.append(parsed_member)
                     events_by_cluster[cluster].append(parsed_member)
 
     # Handle missing Place arguments for events;
@@ -368,47 +342,49 @@ def _parse_clusters(
 
         # Group relation members by relation
         # while filtering out irrelevant ones
-        relations_by_cluster: Dict[URIRef, List[Cluster]] = defaultdict(list)
+        relations_by_cluster: Dict[URIRef, List[ClusterMember]] = defaultdict(list)
         # I'm assuming that input hypothesis files normally link to
         # more than one document
         docs_to_locations: Dict[str, List[Justification]] = defaultdict(list)
         locations_to_data = {}
         location_map: Dict[Justification, Justification] = {}
         for relation in relations:
-            relation_type = rendered(relation[1])
-            predicate_type = relation[4].split("_")[-1]
+            relation_type = rendered(relation.cluster_type)
+            predicate_type = relation.predicate_type.split("_")[-1]
             if relation_type == LOCATED_NEAR:
-                relations_by_cluster[relation[0]].append(relation)
+                relations_by_cluster[relation.cluster].append(relation)
                 # Create list of places for potential use later
                 if predicate_type.split("_")[-1] == PLACE_PREDICATE:
-                    docs_to_locations[relation[9][1]].append(relation[9])
-                    locations_to_data[relation[9]] = (
-                        relation[5],
-                        relation[6],
-                        relation[7],
-                        relation[8],
+                    docs_to_locations[relation.informative_justification[1]].append(
+                        relation.informative_justification
+                    )
+                    locations_to_data[relation.informative_justification] = (
+                        relation.object_node,
+                        relation.rendered_object_types,
+                        relation.object_names,
+                        relation.object_handles,
                     )
             elif (
                 relation_type.startswith(PART_WHOLE)
                 or relation_type.startswith(ORG_AFFILIATION)
                 or relation_type == SPONSORSHIP
             ):
-                relations_by_cluster[relation[0]].append(relation)
+                relations_by_cluster[relation.cluster].append(relation)
         # Create map from locations to broader areas
         for relation_cluster in relations_by_cluster.values():
             relation_place = None
             relation_entity = None
             for relation in relation_cluster:
-                predicate_type = relation[4].split("_")[-1]
+                predicate_type = relation.predicate_type.split("_")[-1]
                 if predicate_type == ENTITY_PREDICATE:
-                    for object_type in relation[6]:
+                    for object_type in relation.rendered_object_types:
                         if any(
                             loc_type in rendered(object_type)
                             for loc_type in PLACE_TYPES
                         ):
-                            relation_entity = relation[9]
+                            relation_entity = relation.informative_justification
                 elif predicate_type == PLACE_PREDICATE:
-                    relation_place = relation[9]
+                    relation_place = relation.informative_justification
             if relation_place and relation_entity:
                 location_map[relation_entity] = relation_place
 
@@ -428,7 +404,7 @@ def _parse_clusters(
                     cluster, cluster_type, relations_by_cluster
                 )
                 if location_from_relation:
-                    parsed_clusters.append(location_from_relation.get_cluster_tuple())
+                    parsed_clusters.append(location_from_relation)
                     _add_place_triples(location_from_relation, graph)
                 else:
                     # As a final resort, choose the most frequently used location in the document
@@ -450,12 +426,12 @@ def _parse_clusters(
                         cluster[0].cluster_member_informative_justification,
                         URIRef(cluster[0].cluster_type + "_" + PLACE_PREDICATE),
                         default_location_info[0],
-                        default_location,
                         default_location_info[1],
                         default_location_info[2],
                         default_location_info[3],
+                        default_location,
                     )
-                    parsed_clusters.append(default_location_cluster.get_cluster_tuple())
+                    parsed_clusters.append(default_location_cluster)
                     _add_place_triples(default_location_cluster, graph)
 
         return immutableset(parsed_clusters), graph
@@ -466,7 +442,7 @@ def _parse_clusters(
 def _get_place_from_relation_or_argument(
     event_cluster: List[ClusterMember],
     cluster_type: str,
-    relations_by_cluster: Dict[URIRef, List[Cluster]],
+    relations_by_cluster: Dict[URIRef, List[ClusterMember]],
 ) -> Optional[ClusterMember]:
     """
     Attempts to find a location that is related to a
@@ -485,21 +461,26 @@ def _get_place_from_relation_or_argument(
     affiliation_clusters = []
     for relation_cluster in relations_by_cluster.values():
         for relation_member in relation_cluster:
-            relation_type_string = rendered(relation_member[1])
+            relation_type_string = rendered(relation_member.cluster_type)
             if relation_type_string == LOCATED_NEAR:
                 for member in event_cluster:
-                    if relation_member[9] == member.informative_justification:
+                    if (
+                        relation_member.informative_justification
+                        == member.informative_justification
+                    ):
                         if (
-                            relation_member[3]
+                            relation_member.cluster_member_informative_justification
                             == member.cluster_member_informative_justification
                         ):
                             # If both justifications match, use that relation.
                             # Find the corresponding Place argument
                             # in this "matching" cluster.
                             for place_relation_member in relation_cluster:
-                                relation_predicate = place_relation_member[4].split(
+                                relation_predicate = place_relation_member.predicate_type.split(
                                     "_"
-                                )[-1]
+                                )[
+                                    -1
+                                ]
                                 if relation_predicate == PLACE_PREDICATE:
                                     return _create_place_cluster(
                                         member, place_relation_member
@@ -509,11 +490,17 @@ def _get_place_from_relation_or_argument(
                             location_clusters.append(relation_cluster)
             elif relation_type_string.startswith(PART_WHOLE):
                 for member in event_cluster:
-                    if relation_member[9] == member.informative_justification:
+                    if (
+                        relation_member.informative_justification
+                        == member.informative_justification
+                    ):
                         part_whole_clusters.append(relation_cluster)
             elif relation_type_string.startswith(ORG_AFFILIATION):
                 for member in event_cluster:
-                    if relation_member[9] == member.informative_justification:
+                    if (
+                        relation_member.informative_justification
+                        == member.informative_justification
+                    ):
                         affiliation_clusters.append(relation_cluster)
             elif relation_type_string == SPONSORSHIP and cluster_type.startswith(
                 CONTACT
@@ -521,7 +508,10 @@ def _get_place_from_relation_or_argument(
                 # Contact events can be particularly difficult to locate,
                 # though a Sponsorship relation may hold a communicator's location.
                 for member in event_cluster:
-                    if relation_member[9] == member.informative_justification:
+                    if (
+                        relation_member.informative_justification
+                        == member.informative_justification
+                    ):
                         affiliation_clusters.append(relation_cluster)
     member = event_cluster[0]  # we just need the event cluster info here
     # We want to prioritize LocatedNear relations
@@ -529,7 +519,7 @@ def _get_place_from_relation_or_argument(
         # TODO: a method for selecting a relation if there are more than two clusters
         # For now we're just grabbing the first relation cluster.
         for place_relation_member in location_clusters[0]:
-            relation_predicate = place_relation_member[4].split("_")[-1]
+            relation_predicate = place_relation_member.predicate_type.split("_")[-1]
             if relation_predicate == PLACE_PREDICATE:
                 return _create_place_cluster(member, place_relation_member)
     if part_whole_clusters:
@@ -545,7 +535,7 @@ def _get_place_from_relation_or_argument(
     for member in event_cluster:
         for object_type in member.rendered_object_types:
             if any(location_type in object_type for location_type in PLACE_TYPES):
-                return _create_place_cluster(member, member.get_cluster_tuple())
+                return _create_place_cluster(member, member)
     return None
 
 
@@ -562,7 +552,7 @@ def _get_higher_level_location(
 
 
 def _get_place_from_clusters(
-    event_cluster_member: ClusterMember, relation_clusters: List[List[Cluster]]
+    event_cluster_member: ClusterMember, relation_clusters: List[List[ClusterMember]]
 ) -> Optional[ClusterMember]:
     """
     Iterates through a list of relations containing an event argument
@@ -571,14 +561,14 @@ def _get_place_from_clusters(
     """
     for relation in relation_clusters:
         for relation_member in relation:
-            for object_type in relation_member[6]:
+            for object_type in relation_member.rendered_object_types:
                 if any(loc_type in object_type for loc_type in PLACE_TYPES):
                     return _create_place_cluster(event_cluster_member, relation_member)
     return None
 
 
 def _create_place_cluster(
-    cluster_member: ClusterMember, relation_member: Cluster
+    cluster_member: ClusterMember, relation_member: ClusterMember
 ) -> ClusterMember:
     return ClusterMember(  # type: ignore
         cluster_member.cluster,
@@ -586,11 +576,11 @@ def _create_place_cluster(
         cluster_member.cluster_member,
         cluster_member.cluster_member_informative_justification,
         URIRef(cluster_member.cluster_type + "_" + PLACE_PREDICATE),
-        relation_member[5],
-        relation_member[9],
-        relation_member[6],
-        relation_member[7],
-        relation_member[8],
+        relation_member.object_node,
+        relation_member.rendered_object_types,
+        relation_member.object_names,
+        relation_member.object_handles,
+        relation_member.informative_justification,
     )
 
 
