@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Tuple
 
 from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
 from attr import attrib, attrs
@@ -15,19 +15,18 @@ from vistautils.misc_utils import flatten_once_to_list
 
 from .documents import render_html
 
-# Typing aliases
-Cluster = Tuple[
-    URIRef,
-    URIRef,
-    URIRef,
-    Tuple[str, str, int, int],
-    URIRef,
-    URIRef,
-    ImmutableSet[str],
-    ImmutableSet[str],
-    ImmutableSet[str],
-    Tuple[str, str, int, int],
-]
+
+class Cluster(NamedTuple):
+    cluster_id: URIRef
+    cluster_type: URIRef
+    cluster_member_id: URIRef
+    cluster_member_informative_justification: Tuple[str, str, int, int]
+    predicate_type: URIRef
+    object_node: URIRef  # What is this?
+    object_types: ImmutableSet[str]
+    object_names: ImmutableSet[str]
+    object_handles: ImmutableSet[str]
+    informative_justification: Tuple[str, str, int, int]
 
 
 @attrs(frozen=True, slots=True)
@@ -35,6 +34,7 @@ class Hypothesis:
     _name: str = attrib(converter=str)
     _events: ImmutableSet[Cluster] = attrib()
     _relations: ImmutableSet[Cluster] = attrib()
+    _entities: ImmutableSet[Cluster] = attrib()
 
     @property
     def event_by_cluster(self) -> ImmutableDict[URIRef, List[Cluster]]:
@@ -47,14 +47,17 @@ class Hypothesis:
     @property
     def event_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [event[:2] for event in self._events]
-        )  # id/type are the 1/2nd items in the tuple
+            [(event.cluster_member_id, event.cluster_type) for event in self._events]
+        )
 
     @property
     def relation_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [relation[:2] for relation in self._relations]
-        )  # id/type are the 1/2nd items in the tuple
+            [
+                (relation.cluster_member_id, relation.cluster_type)
+                for relation in self._relations
+            ]
+        )
 
     @staticmethod
     def _by_cluster(
@@ -62,7 +65,9 @@ class Hypothesis:
     ) -> ImmutableDict[URIRef, List[Cluster]]:
         _item_by_cluster: Dict[URIRef, List[Cluster]] = {}
         for event in items:
-            cluster = event[0]  # the first member of the tuple is the cluster-level id
+            cluster = (
+                event.cluster_member_id
+            )  # the first member of the tuple is the cluster-level id
             if cluster not in _item_by_cluster:
                 _item_by_cluster[cluster] = []
             _item_by_cluster[cluster].append(
@@ -103,7 +108,12 @@ class Hypothesis:
             name=graph.value(predicate=RDF.type, object=AIDA_ANNOTATION.Hypothesis),
             events=events,
             relations=relations,
+            entities=immutableset(),
         )
+
+    @staticmethod
+    def from_graph_m36(graph: Graph) -> "Hypothesis":
+        pass
 
     def visualize(
         self, output_dir: Path, output_file: Path, db_path: Path, verbose: bool
@@ -150,7 +160,8 @@ def _render_cluster(
 
     current_cluster_member_id = None
     for relation in sorted(
-        items, key=lambda i: (i[2], i[3])
+        items,
+        key=lambda i: (i.cluster_member_id, i.cluster_member_informative_justification),
     ):  # sort first by cluster, then by predicate
         _, _, cluster_member_id, cluster_member_informative_justification, predicate_type, _, object_types, object_names, object_handles, informative_justification = (
             relation
@@ -211,18 +222,16 @@ def _render_cluster(
 def _parse_clusters(
     clusters: ImmutableSet[URIRef], graph: Graph
 ) -> ImmutableSet[Cluster]:
+
     parsed_clusters = []
+
     for cluster in clusters:
+
         cluster_prototype = graph.value(
             subject=cluster, predicate=AIDA_ANNOTATION.prototype, any=False
         )
-        cluster_prototype_types = [
-            graph.value(subject=prototype_subj, predicate=RDF.object, any=False)
-            for prototype_subj in graph.subjects(
-                predicate=RDF.subject, object=cluster_prototype
-            )
-            if (prototype_subj, RDF.predicate, RDF.type) in graph
-        ]
+
+        cluster_prototype_types = _get_cluster_types(cluster_prototype, graph)
 
         if len(cluster_prototype_types) != 1:
             raise ValueError(
@@ -231,22 +240,26 @@ def _parse_clusters(
         cluster_type = cluster_prototype_types[0]
 
         cluster_members = sorted([m for m in _entities_in_cluster(graph, cluster)])
-        for cluster_member in cluster_members:
-            for member_node in sorted(
-                graph.subjects(predicate=RDF.subject, object=cluster_member)
-            ):
-                cluster_member_informative_justification = _get_informative_justification(
-                    cluster_member, graph
-                )
 
-                predicate_type = graph.value(
-                    subject=member_node, predicate=RDF.predicate, any=False
+        for cluster_member in cluster_members:  #
+            statements = sorted(
+                graph.subjects(predicate=RDF.subject, object=cluster_member)
+            )
+
+            cluster_member_informative_justification = _get_informative_justification(
+                cluster_member, graph
+            )
+
+            for statement in statements:
+
+                statement_predicate = graph.value(
+                    subject=statement, predicate=RDF.predicate, any=False
                 )
-                object_node = graph.value(
-                    subject=member_node, predicate=RDF.object, any=False
+                statement_object = graph.value(
+                    subject=statement, predicate=RDF.object, any=False
                 )
                 cluster_membership_node = graph.value(
-                    predicate=AIDA_ANNOTATION.clusterMember, object=object_node
+                    predicate=AIDA_ANNOTATION.clusterMember, object=statement_object
                 )
                 cluster_node = graph.value(
                     subject=cluster_membership_node, predicate=AIDA_ANNOTATION.cluster
@@ -255,7 +268,7 @@ def _parse_clusters(
                 object_names = [
                     str(obj)
                     for obj in graph.objects(
-                        subject=object_node, predicate=AIDA_ANNOTATION.hasName
+                        subject=statement_object, predicate=AIDA_ANNOTATION.hasName
                     )
                 ]
                 object_names.sort()
@@ -271,15 +284,15 @@ def _parse_clusters(
                         graph.value(subject=subj, predicate=RDF.object, any=False)
                     ).split("#")[-1]
                     for subj in graph.subjects(
-                        predicate=RDF.subject, object=object_node
+                        predicate=RDF.subject, object=statement_object
                     )
                 ]
                 rendered_object_types.sort()
                 informative_justification = _get_informative_justification(
-                    object_node, graph
+                    statement_object, graph
                 )
 
-                if predicate_type != RDF.type:
+                if statement_predicate != RDF.type:
                     if informative_justification == (
                         "",
                         "",
@@ -293,13 +306,13 @@ def _parse_clusters(
                             "reposoitory for more details or to fix this issue."
                         )
                     parsed_clusters.append(
-                        (
+                        Cluster(
                             cluster,
                             cluster_type,
                             cluster_member,
                             cluster_member_informative_justification,
-                            predicate_type,
-                            object_node,
+                            statement_predicate,
+                            statement_object,
                             immutableset(rendered_object_types),
                             immutableset(object_names),
                             immutableset(object_handles),
@@ -387,6 +400,14 @@ def _entities_in_cluster(g: Graph, cluster: URIRef) -> ImmutableSet[URIRef]:
             for cluster_membership in g.subjects(AIDA_ANNOTATION.cluster, cluster)
         )
     )
+
+
+def _get_cluster_types(cluster: URIRef, graph: Graph):
+    return [
+        graph.value(subject=prototype_subj, predicate=RDF.object, any=False)
+        for prototype_subj in graph.subjects(predicate=RDF.subject, object=cluster)
+        if (prototype_subj, RDF.predicate, RDF.type) in graph
+    ]
 
 
 def _write_css_styling(css_file: Path):
