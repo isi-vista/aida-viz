@@ -1,62 +1,46 @@
-import argparse
-import sqlite3
 from pathlib import Path
+from typing import Optional
 from zipfile import ZipFile
 
-from .corpus import get_text_docs
-from .database import create_schema, insert_document
+import click
 
-USAGE = """
-    Creates an SQLite database file from the AIDA Phase 1 Evaluation Source Data in .zip format.
-    (Note that LDC distributes this data in .tgz format. You must first convert it to .zip.)
-"""
+from . import core
 
 
-def getargs():
-    """Get command-line arguments."""
-    parser = argparse.ArgumentParser(usage=USAGE)
-    arg = parser.add_argument
-
-    arg(
-        "-z",
-        "--zip",
-        type=ZipFile,
-        help=".zip file containing the LDC corpus (LDC)",
-        required=True,
-    )
-
-    arg(
-        "-d",
-        "--db",
-        type=Path,
-        help="Write location for the database file.",
-        required=True,
-    )
-
-    return parser.parse_args()
+@click.group()
+def cli():
+    pass
 
 
-def main():
-    args = getargs()
-    corpus, db = args.zip, args.db
+@cli.command(
+    help="""
+        Creates an SQLite database file from the AIDA Phase 1 Evaluation Source Data in .zip format.
+        (Note that LDC distributes this data in .tgz format. You must first convert it to .zip.)
+    """
+)
+@click.option(
+    "-z",
+    "--ldc_zip",
+    type=ZipFile,
+    help=".zip file containing the LDC corpus (LDC)",
+    required=True,
+)
+@click.option(
+    "-w",
+    "--write_to",
+    type=Path,
+    help="Write location for the new database file.",
+    required=True,
+)
+@click.option(
+    "--prefix",
+    type=str,
+    help="Write location for the new database file.",
+    required=False,
+)
+def build_corpus(ldc_zip: ZipFile, write_to: Path, prefix: Optional[str]):
+    core.build_sqlite(ldc_zip, write_to, prefix=prefix)
 
-    docs = get_text_docs(corpus)
 
-    if not db.exists():
-        db.touch()
-        new = True
-
-    conn = sqlite3.connect(str(db), detect_types=sqlite3.PARSE_DECLTYPES)
-
-    if new:
-        with conn:
-            create_schema(conn)
-
-    with conn:
-        for doc_id, fulltext in docs.items():
-            insert_document(conn, doc_id, fulltext)
-
-    print(f"Database created at {db}")
-
-
-main()
+if __name__ == "__main__":
+    cli()

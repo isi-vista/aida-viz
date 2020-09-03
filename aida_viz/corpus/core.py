@@ -4,20 +4,52 @@ Contains utilities for reading from the LDC corpus used for AIDA.
 import hashlib
 import io
 import re
-from typing import Mapping, Optional, Pattern
+from pathlib import Path
+from sqlite3 import Row, connect
+from typing import Iterable, List, Mapping, Optional, Pattern, Tuple
 from zipfile import Path as ZipPath
 from zipfile import ZipFile
 
 import pandas as pd
-from immutablecollections import ImmutableDict, immutabledict
+from immutablecollections import immutabledict
 from tqdm import tqdm
 from vistautils.io_utils import CharSource
 
+from . import sqlite
 
-def get_text_docs(corpus_zipfile: ZipFile) -> ImmutableDict[str, str]:
+
+class Corpus:
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+
+    def __iter__(self):
+        return self.query("SELECT * FROM documents")
+
+    def query(self, sql: str) -> Iterable[dict]:
+        with connect(self.db_path) as connection:
+            connection.row_factory = Row
+            for result in connection.execute(sql):
+                yield dict(result)
+
+    def __getitem__(self, parent_id: str):
+        return list(
+            self.query(f'SELECT * FROM documents WHERE parent_id is "{parent_id}"')
+        )
+
+
+def build_sqlite(corpus_zip: ZipFile, db: Path, prefix: Optional[str]):
+    documents = zipfile_to_documents(corpus_zip, prefix)
+    sqlite.initialize_corpus(db)
+    sqlite.insert_documents(db, documents)
+
+
+def zipfile_to_documents(
+    corpus_zipfile: ZipFile, prefix: Optional[str]
+) -> List[Tuple[str, str, str, str]]:
     print(f"Reading .ltf documents in {corpus_zipfile.filename}")
 
-    prefix = get_root_dir_name(corpus_zipfile) or ""
+    if prefix is None:
+        prefix = get_root_dir_name(corpus_zipfile) or ""
 
     parent_children_path = _find_name_in_zip(
         corpus_zipfile, re.compile(f"{prefix}docs/parent_children.tab")
@@ -31,9 +63,10 @@ def get_text_docs(corpus_zipfile: ZipFile) -> ImmutableDict[str, str]:
     )
 
     child_to_parent_map = _create_child_to_parent_map(parent_children_tab)
+    child_to_lang_map = _create_child_to_lang_map(parent_children_tab)
 
-    text_docs = {}
-    text_dir = ZipPath(corpus_zipfile, at="data/ltf/")
+    documents = []
+    text_dir = ZipPath(corpus_zipfile, at=f"{prefix}data/ltf/")
 
     for source_doc_path in text_dir.iterdir():
         source_doc_zip = ZipFile(io.BytesIO(source_doc_path.read_bytes()))
@@ -44,17 +77,21 @@ def get_text_docs(corpus_zipfile: ZipFile) -> ImmutableDict[str, str]:
             bar_format="{l_bar}{bar:20}{r_bar}",
         ):
 
-            doc = ZipPath(source_doc_zip, at=source_info.filename)
+            doceid_path = ZipPath(source_doc_zip, at=source_info.filename)
             try:
-                doceid = doc.name.split(".")[0]
+                doceid = doceid_path.name.split(".")[0]
                 doc_id = child_to_parent_map[doceid]
-                text_docs[doc_id] = convert_ltf_to_raw_text(
-                    doc.read_text(encoding="utf-8")
+                lang_id = child_to_lang_map[doceid]
+                raw_text = convert_ltf_to_raw_text(
+                    doceid_path.read_text(encoding="utf-8")
                 )
-            except AttributeError:
-                raise FileNotFoundError(f"Could not read from {doc}.")
 
-    return immutabledict(text_docs)
+                documents.append((doc_id, doceid, lang_id, raw_text))
+
+            except AttributeError:
+                raise FileNotFoundError(f"Could not read from {doceid_path}.")
+
+    return documents
 
 
 def convert_ltf_to_raw_text(xml_string: str) -> str:
@@ -159,6 +196,18 @@ def _create_child_to_parent_map(
     return immutabledict(
         [
             (row["child_uid"], row["parent_uid"])
+            for _, row in parent_child_file_df.iterrows()
+        ]
+    )
+
+
+def _create_child_to_lang_map(parent_child_file_df: pd.DataFrame) -> Mapping[str, str]:
+    """Using the `docs/parent_children.tab` file from an AIDA corpus, creating a mapping from
+    child to parent documents.
+    """
+    return immutabledict(
+        [
+            (row["child_uid"], row["lang_id"])
             for _, row in parent_child_file_df.iterrows()
         ]
     )

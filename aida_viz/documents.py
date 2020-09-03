@@ -1,3 +1,4 @@
+import sqlite3
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -7,7 +8,20 @@ from immutablecollections import ImmutableDict, immutabledict
 from jinja2 import Template
 from vistautils.span import Span
 
-from .corpus.database import document_entry
+
+def document_entry(db_path: Path, parent_or_child_id: str) -> ImmutableDict[str, str]:
+    with sqlite3.connect(str(db_path), detect_types=sqlite3.PARSE_DECLTYPES) as db:
+        db.row_factory = sqlite3.Row
+        document = db.execute(
+            f'SELECT * FROM documents WHERE parent_id=="{parent_or_child_id}"'
+        ).fetchone()
+
+        if not document:
+            document = db.execute(
+                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
+            ).fetchone()
+
+    return immutabledict(document)
 
 
 def get_sentence_spans(document_text: str) -> List[Span]:
@@ -36,14 +50,14 @@ def get_title_sentence(document_text: str) -> Optional[str]:
     return None
 
 
-def get_document(db_path: Path, document_id: str) -> ImmutableDict[str, str]:
-    document = document_entry(db_path, document_id)
+def get_document(db_path: Path, parent_or_child_id: str) -> ImmutableDict[str, str]:
+    document = document_entry(db_path, parent_or_child_id)
     title = get_title_sentence(document["fulltext"])
-    return immutabledict({"id": document_id, "title": title, **document})
+    return immutabledict({"id": document["parent_id"], "title": title, **document})
 
 
 def contexts_from_justifications(
-    justifications: ImmutableDict[str, Span], document: ImmutableDict[str, str]
+    justifications: ImmutableDict[str, Span], document
 ) -> ImmutableDict[str, Span]:
     document_text = document["fulltext"]
     sentence_spans = get_sentence_spans(document_text)
@@ -205,12 +219,15 @@ def render_template(document: ImmutableDict[str, str]):
 
 
 def render_html(
-    db_path: Path, output_dir: Path, document_id: str, start: int, end: int
+    db_path: Path, output_dir: Path, parent_or_child_id: str, start: int, end: int
 ) -> Tuple[Path, str]:
     """Outputs either the whole document rendered in HTML or a subspan. `end` is inclusive."""
-    document = get_document(db_path, document_id)
+
+    document = get_document(db_path, parent_or_child_id)
     if not document:
-        raise ValueError(f"{document_id} not present in the document database.")
+        raise ValueError(
+            f"{document['parent_id']} not present in the document database."
+        )
 
     justification_spans: ImmutableDict[str, Span] = immutabledict(
         {f"{start}:{end}": Span(start, end + 1)}
@@ -225,14 +242,14 @@ def render_html(
     final_html = render_template(
         document=immutabledict(
             {
-                "id": document_id,
+                "id": document["parent_id"],
                 "title": document["title"],
                 "html": to_render,
                 "span": f"{start}:{end}",
             }
         )
     )
-    output_file = output_dir / f"{document_id}_{start}-{end}.html"
+    output_file = output_dir / f"{document['parent_id']}_{start}-{end}.html"
     output_file.write_text(final_html)
 
     return output_file, document["fulltext"][start : end + 1]
