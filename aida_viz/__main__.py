@@ -39,7 +39,7 @@ def main(
 
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(out_dir)
+        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
     return out_dir
 
 

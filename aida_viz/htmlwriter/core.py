@@ -25,7 +25,9 @@ class HtmlWriter:
             for r in self.corpus.query(f"SELECT parent_id, child_id FROM documents")
         }
 
-    def write_to_dir(self, output_dir: Path):
+    def write_to_dir(
+        self, output_dir: Path, output_file_name: str = "visualization.html"
+    ):
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
 
@@ -62,7 +64,7 @@ class HtmlWriter:
                 )
                 justification_file.write_text(rendered_html)
 
-        html_file = output_dir / "visualization.html"
+        html_file = output_dir / output_file_name
 
         html_lines = [
             "<html>",
