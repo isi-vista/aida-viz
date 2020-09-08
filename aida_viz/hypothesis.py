@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
-from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
+from aida_interchange.rdf_ontologies import interchange_ontology as AIDA_ANNOTATION
 from attr import attrib, attrs
 from immutablecollections import (
     ImmutableDict,

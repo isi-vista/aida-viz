@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
+from aida_interchange.rdf_ontologies import interchange_ontology as AIDA_ANNOTATION
 from rdflib import RDF, Graph
 
 from aida_viz.corpus.core import Corpus
