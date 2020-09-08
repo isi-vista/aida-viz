@@ -1,29 +1,9 @@
-import sqlite3
 from collections import defaultdict
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import nltk
 from immutablecollections import ImmutableDict, immutabledict
-from jinja2 import Template
 from vistautils.span import Span
-
-from aida_viz.corpus.core import Corpus
-
-
-def document_entry(db_path: Path, parent_or_child_id: str) -> ImmutableDict[str, str]:
-    with sqlite3.connect(str(db_path), detect_types=sqlite3.PARSE_DECLTYPES) as db:
-        db.row_factory = sqlite3.Row
-        document = db.execute(
-            f'SELECT * FROM documents WHERE parent_id=="{parent_or_child_id}"'
-        ).fetchone()
-
-        if not document:
-            document = db.execute(
-                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
-            ).fetchone()
-
-    return immutabledict(document)
 
 
 def get_sentence_spans(document_text: str) -> List[Span]:
@@ -50,27 +30,6 @@ def get_title_sentence(document_text: str) -> Optional[str]:
         return first_sentence
 
     return None
-
-
-def get_document(corpus: Corpus, parent_or_child_id: str):
-    # document = document_entry(db_path, parent_or_child_id)
-    try:
-        document = corpus[parent_or_child_id]
-    except StopIteration:
-
-        matching_documents = list(
-            corpus.query(
-                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
-            )
-        )
-
-        if not matching_documents:
-            raise ValueError(f"could not find {parent_or_child_id}")
-
-        document = matching_documents[0]
-
-    title = get_title_sentence(document["fulltext"])
-    return immutabledict({"id": document["parent_id"], "title": title, **document})
 
 
 def contexts_from_justifications(
@@ -193,43 +152,3 @@ def render_document(
             }
         ),
     )
-
-
-def render_template(document: ImmutableDict[str, str]):
-    return Template(
-        """
-<!doctype html>
-<html lang="en">
-  <head>
-
-    <meta charset="utf-8">
-    <title>{{ title }}</title>
-    <link
-      rel="stylesheet"
-      href="../style.css">
-  </head>
-
-  <body>
-    <div class="card" style="width:100%;float:left;">
-      <div class="card-header text-center bg-light-custom">
-        {{ document.title }}
-      </div>
-      <div class="card-body document-details-modal modal-body text-left">
-        {{ document.html|safe }}
-      </div>
-    </div>
-
-    <script>
-      (function() {
-        var mention = document.getElementById('contextof-{{ document.span }}');
-        mention.scrollIntoView({
-            'behavior': 'auto',
-            'block': 'center',
-            'inline': 'center'
-        });
-      })();
-    </script>
-  </body>
-</html>
-"""
-    ).render(document=document)

@@ -9,6 +9,7 @@ from immutablecollections import (
     immutabledict,
     immutableset,
 )
+from jinja2 import Template
 from rdflib import RDF, Graph
 from rdflib.term import URIRef
 from vistautils.misc_utils import flatten_once_to_list
@@ -16,12 +17,7 @@ from vistautils.span import Span
 
 from aida_viz.corpus.core import Corpus
 
-from .documents import (
-    contexts_from_justifications,
-    get_document,
-    render_document,
-    render_template,
-)
+from .documents import contexts_from_justifications, get_title_sentence, render_document
 
 
 class Cluster(NamedTuple):
@@ -517,7 +513,7 @@ def _render_html(
 ) -> Tuple[Path, str]:
     """Outputs either the whole document rendered in HTML or a subspan. `end` is inclusive."""
 
-    document = get_document(corpus, parent_or_child_id)
+    document = _get_document(corpus, parent_or_child_id)
     if not document:
         raise ValueError(
             f"{document['parent_id']} not present in the document database."
@@ -533,7 +529,7 @@ def _render_html(
     if not to_render:
         raise ValueError("Could not find anything to render.")
 
-    final_html = render_template(
+    final_html = _render_template(
         document=immutabledict(
             {
                 "id": document["parent_id"],
@@ -547,6 +543,66 @@ def _render_html(
     output_file.write_text(final_html)
 
     return output_file, document["fulltext"][start : end + 1]
+
+
+def _render_template(document: ImmutableDict[str, str]):
+    return Template(
+        """
+<!doctype html>
+<html lang="en">
+  <head>
+
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <link
+      rel="stylesheet"
+      href="../style.css">
+  </head>
+
+  <body>
+    <div class="card" style="width:100%;float:left;">
+      <div class="card-header text-center bg-light-custom">
+        {{ document.title }}
+      </div>
+      <div class="card-body document-details-modal modal-body text-left">
+        {{ document.html|safe }}
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        var mention = document.getElementById('contextof-{{ document.span }}');
+        mention.scrollIntoView({
+            'behavior': 'auto',
+            'block': 'center',
+            'inline': 'center'
+        });
+      })();
+    </script>
+  </body>
+</html>
+"""
+    ).render(document=document)
+
+
+def _get_document(corpus: Corpus, parent_or_child_id: str):
+    try:
+        document = corpus[parent_or_child_id]
+    except StopIteration:
+
+        matching_documents = list(
+            corpus.query(
+                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
+            )
+        )
+
+        if not matching_documents:
+            raise ValueError(f"could not find {parent_or_child_id}")
+
+        document = matching_documents[0]
+
+    title = get_title_sentence(document["fulltext"])
+    return immutabledict({"id": document["parent_id"], "title": title, **document})
 
 
 def _entities_in_cluster(g: Graph, cluster: URIRef) -> ImmutableSet[URIRef]:
