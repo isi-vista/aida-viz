@@ -2,18 +2,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from immutablecollections import ImmutableDict, immutabledict
+from immutablecollections import immutabledict
 from jinja2 import Template
 from rdflib import RDF, URIRef
 from rdflib.namespace import split_uri
-from vistautils.span import Span
 
 from aida_viz.corpus.core import Corpus
-from aida_viz.documents import (
-    contexts_from_justifications,
-    get_title_sentence,
-    render_document,
-)
+from aida_viz.documents import get_title_sentence, render_single_justification_document
 from aida_viz.elements import Element, Justification, Statement
 from aida_viz.htmlwriter.resources import STYLE, TEMPLATE
 
@@ -47,24 +42,16 @@ class HtmlWriter:
                 )
                 document = self.corpus[document_id]
 
-                justification_spans: ImmutableDict[str, Span] = immutabledict(
-                    {f"{j.span_start}:{j.span_end}": Span(j.span_start, j.span_end + 1)}
+                justification_document_html = render_single_justification_document(
+                    document, j
                 )
-
-                contexts = contexts_from_justifications(justification_spans, document)
-
-                to_render, _ = render_document(
-                    document["fulltext"], justification_spans, contexts
-                )
-                if not to_render:
-                    raise ValueError("Could not find anything to render.")
 
                 rendered_html = Template(TEMPLATE).render(
                     document=immutabledict(
                         {
                             "id": document["parent_id"],
                             "title": get_title_sentence(document["fulltext"]),
-                            "html": to_render,
+                            "html": justification_document_html,
                             "span": f"{j.span_start}:{j.span_end}",
                         }
                     )
@@ -77,7 +64,11 @@ class HtmlWriter:
 
         html_file = output_dir / "visualization.html"
 
-        html_lines = ["<html>", "<body>"]
+        html_lines = [
+            "<html>",
+            '<head><link rel="stylesheet" href="style.css"></head>',
+            "<body>",
+        ]
         element_list_by_type = defaultdict(list)
         for element in self.elements.values():
             _, element_type = split_uri(element.element_type)

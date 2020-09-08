@@ -123,4 +123,8 @@ ul{
 .table-hover tbody tr:hover td, .table-hover tbody tr:hover th {
   background-color: rgb(66,139,202,0.5) ;
 }
+
+:target {
+  background-color: #FFFF00;
+}
 """
