@@ -1,13 +1,9 @@
 from collections import defaultdict
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import nltk
 from immutablecollections import ImmutableDict, immutabledict
-from jinja2 import Template
 from vistautils.span import Span
-
-from .corpus.database import document_entry
 
 
 def get_sentence_spans(document_text: str) -> List[Span]:
@@ -36,14 +32,8 @@ def get_title_sentence(document_text: str) -> Optional[str]:
     return None
 
 
-def get_document(db_path: Path, document_id: str) -> ImmutableDict[str, str]:
-    document = document_entry(db_path, document_id)
-    title = get_title_sentence(document["fulltext"])
-    return immutabledict({"id": document_id, "title": title, **document})
-
-
 def contexts_from_justifications(
-    justifications: ImmutableDict[str, Span], document: ImmutableDict[str, str]
+    justifications: ImmutableDict[str, Span], document
 ) -> ImmutableDict[str, Span]:
     document_text = document["fulltext"]
     sentence_spans = get_sentence_spans(document_text)
@@ -162,77 +152,3 @@ def render_document(
             }
         ),
     )
-
-
-def render_template(document: ImmutableDict[str, str]):
-    return Template(
-        """
-<!doctype html>
-<html lang="en">
-  <head>
-
-    <meta charset="utf-8">
-    <title>{{ title }}</title>
-    <link
-      rel="stylesheet"
-      href="../style.css">
-  </head>
-
-  <body>
-    <div class="card" style="width:100%;float:left;">
-      <div class="card-header text-center bg-light-custom">
-        {{ document.title }}
-      </div>
-      <div class="card-body document-details-modal modal-body text-left">
-        {{ document.html|safe }}
-      </div>
-    </div>
-
-    <script>
-      (function() {
-        var mention = document.getElementById('contextof-{{ document.span }}');
-        mention.scrollIntoView({
-            'behavior': 'auto',
-            'block': 'center',
-            'inline': 'center'
-        });
-      })();
-    </script>
-  </body>
-</html>
-"""
-    ).render(document=document)
-
-
-def render_html(
-    db_path: Path, output_dir: Path, document_id: str, start: int, end: int
-) -> Tuple[Path, str]:
-    """Outputs either the whole document rendered in HTML or a subspan. `end` is inclusive."""
-    document = get_document(db_path, document_id)
-    if not document:
-        raise ValueError(f"{document_id} not present in the document database.")
-
-    justification_spans: ImmutableDict[str, Span] = immutabledict(
-        {f"{start}:{end}": Span(start, end + 1)}
-    )
-
-    contexts = contexts_from_justifications(justification_spans, document)
-
-    to_render, _ = render_document(document["fulltext"], justification_spans, contexts)
-    if not to_render:
-        raise ValueError("Could not find anything to render.")
-
-    final_html = render_template(
-        document=immutabledict(
-            {
-                "id": document_id,
-                "title": document["title"],
-                "html": to_render,
-                "span": f"{start}:{end}",
-            }
-        )
-    )
-    output_file = output_dir / f"{document_id}_{start}-{end}.html"
-    output_file.write_text(final_html)
-
-    return output_file, document["fulltext"][start : end + 1]

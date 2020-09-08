@@ -1,26 +1,46 @@
 import argparse
 from pathlib import Path
 
-from rdflib import Graph
+from rdflib import RDF, Graph, Namespace
 
+from aida_viz.corpus.core import Corpus
+from aida_viz.elements import Element
+from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
 
 
-def main(aif_file: Path, out_dir: Path, db_path: Path, verbose: bool) -> Path:
-    graph = Graph()
+def main(
+    aif_file: Path, out_dir: Path, db_path: Path, by_clusters: bool, verbose: bool
+) -> Path:
+    graph: Graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
 
-    out_dir.mkdir(exist_ok=True)
-    if verbose:
-        output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
+    if by_clusters:
+        out_dir.mkdir(exist_ok=True)
+        if verbose:
+            output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
+        else:
+            output_file = out_dir / f"{aif_file.stem}_visualization.html"
+        output_file.touch(exist_ok=True)
+        hypothesis = Hypothesis.from_graph(graph)
+        hypothesis.visualize(out_dir, output_file, db_path, verbose)
     else:
-        output_file = out_dir / f"{aif_file.stem}_visualization.html"
-    output_file.touch(exist_ok=True)
+        entities = list(graph.subjects(predicate=RDF.type, object=aida.Entity))
+        events = list(graph.subjects(predicate=RDF.type, object=aida.Event))
+        relations = list(graph.subjects(predicate=RDF.type, object=aida.Relation))
+        clusters = list(graph.subjects(predicate=RDF.type, object=aida.SameAsCluster))
 
-    hypothesis = Hypothesis.from_graph(graph)
-    hypothesis.visualize(out_dir, output_file, db_path, verbose)
+        element_ids = clusters + entities + events + relations
+        elements = {
+            element_id: Element.from_uriref(element_id, graph=graph)
+            for element_id in element_ids
+        }
 
-    return output_file
+        corpus = Corpus(db_path)
+        renderer = HtmlWriter(corpus, elements)
+        renderer.write_to_dir(out_dir)
+    return out_dir
 
 
 # pylint: disable=C0103
@@ -45,8 +65,9 @@ if __name__ == "__main__":
         dest="out_dir",
         default="./visualizer_results",
     )
+    parser.add_argument("--by_clusters", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
 
     output = main(**vars(parser.parse_args()))
 
-    print(f"Vizualization file: {output}")
+    print(f"Vizualization: {output}")

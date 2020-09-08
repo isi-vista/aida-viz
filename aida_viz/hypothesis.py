@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
-from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
 from attr import attrib, attrs
 from immutablecollections import (
     ImmutableDict,
@@ -9,25 +8,49 @@ from immutablecollections import (
     immutabledict,
     immutableset,
 )
-from rdflib import RDF, Graph
+from jinja2 import Template
+from rdflib import RDF, Graph, Namespace
 from rdflib.term import URIRef
 from vistautils.misc_utils import flatten_once_to_list
+from vistautils.span import Span
 
-from .documents import render_html
+from aida_viz.corpus.core import Corpus
+from aida_viz.documents import (
+    contexts_from_justifications,
+    get_title_sentence,
+    render_document,
+)
 
-# Typing aliases
-Cluster = Tuple[
-    URIRef,
-    URIRef,
-    URIRef,
-    Tuple[str, str, int, int],
-    URIRef,
-    URIRef,
-    ImmutableSet[str],
-    ImmutableSet[str],
-    ImmutableSet[str],
-    Tuple[str, str, int, int],
-]
+
+class Cluster(NamedTuple):
+    cluster_id: URIRef
+    cluster_type: URIRef
+    cluster_member_id: URIRef
+    cluster_member_informative_justification: Tuple[
+        Optional[str], Optional[str], int, int
+    ]
+    predicate_type: URIRef
+    object_node: URIRef  # What is this?
+    object_types: ImmutableSet[str]
+    object_names: ImmutableSet[str]
+    object_handles: ImmutableSet[str]
+    informative_justification: Tuple[Optional[str], Optional[str], int, int]
+
+
+class Statement(NamedTuple):
+    predicate: URIRef
+    object: URIRef
+    object_names: List[str]
+    object_handles: List[str]
+    object_types: List[str]
+    informative_justification: URIRef
+
+
+class Justification(NamedTuple):
+    parent_id: Optional[str]
+    child_id: Optional[str]
+    span_start: int
+    span_end: int
 
 
 @attrs(frozen=True, slots=True)
@@ -35,6 +58,7 @@ class Hypothesis:
     _name: str = attrib(converter=str)
     _events: ImmutableSet[Cluster] = attrib()
     _relations: ImmutableSet[Cluster] = attrib()
+    _entities: ImmutableSet[Cluster] = attrib()
 
     @property
     def event_by_cluster(self) -> ImmutableDict[URIRef, List[Cluster]]:
@@ -47,38 +71,44 @@ class Hypothesis:
     @property
     def event_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [event[:2] for event in self._events]
-        )  # id/type are the 1/2nd items in the tuple
+            [(event.cluster_member_id, event.cluster_type) for event in self._events]
+        )
 
     @property
     def relation_cluster_types(self) -> ImmutableDict[URIRef, URIRef]:
         return immutabledict(
-            [relation[:2] for relation in self._relations]
-        )  # id/type are the 1/2nd items in the tuple
+            [
+                (relation.cluster_member_id, relation.cluster_type)
+                for relation in self._relations
+            ]
+        )
 
     @staticmethod
     def _by_cluster(
         items: ImmutableSet[Cluster]
     ) -> ImmutableDict[URIRef, List[Cluster]]:
         _item_by_cluster: Dict[URIRef, List[Cluster]] = {}
+
         for event in items:
-            cluster = event[0]  # the first member of the tuple is the cluster-level id
+            cluster = event.cluster_member_id
+
             if cluster not in _item_by_cluster:
                 _item_by_cluster[cluster] = []
-            _item_by_cluster[cluster].append(
-                event
-            )  # cluster-level id/type are at indices 0/1
+
+            _item_by_cluster[cluster].append(event)
+
         return immutabledict(_item_by_cluster)
 
     @staticmethod
     def from_graph(graph: Graph) -> "Hypothesis":
-        all_clusters = sorted(graph.subjects(RDF.type, AIDA_ANNOTATION.SameAsCluster))
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        all_clusters = sorted(graph.subjects(RDF.type, aida.SameAsCluster))
         event_clusters = immutableset(
             [
                 cluster
                 for cluster in all_clusters
                 if all(
-                    (event, RDF.type, AIDA_ANNOTATION.Event) in graph
+                    (event, RDF.type, aida.Event) in graph
                     for event in _entities_in_cluster(graph, cluster)
                 )
             ]
@@ -91,7 +121,7 @@ class Hypothesis:
                     cluster
                     for cluster in all_clusters
                     if all(
-                        (relation, RDF.type, AIDA_ANNOTATION.Relation) in graph
+                        (relation, RDF.type, aida.Relation) in graph
                         for relation in _entities_in_cluster(graph, cluster)
                     )
                 ]
@@ -100,10 +130,35 @@ class Hypothesis:
         relations = _parse_clusters(relation_clusters, graph)
 
         return Hypothesis(
-            name=graph.value(predicate=RDF.type, object=AIDA_ANNOTATION.Hypothesis),
+            name=graph.value(predicate=RDF.type, object=aida.Hypothesis),
             events=events,
             relations=relations,
+            entities=immutableset(),
         )
+
+    @staticmethod
+    def from_graph_by_elements(graph: Graph) -> "Hypothesis":
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        event_elements: ImmutableSet[URIRef] = immutableset(
+            graph.subjects(object=aida.Event)
+        )
+        events: ImmutableSet[Cluster] = _parse_elements(event_elements, graph)
+
+        relation_elements: ImmutableSet[URIRef] = immutableset(
+            graph.subjects(object=aida.Relation)
+        )
+        relations: ImmutableSet[Cluster] = _parse_elements(relation_elements, graph)
+
+        return Hypothesis(
+            name=graph.value(predicate=RDF.type, object=aida.Hypothesis),
+            events=events,
+            relations=relations,
+            entities=immutableset(),
+        )
+
+    @staticmethod
+    def from_graph_m36(graph: Graph) -> "Hypothesis":
+        pass
 
     def visualize(
         self, output_dir: Path, output_file: Path, db_path: Path, verbose: bool
@@ -144,25 +199,31 @@ class Hypothesis:
 
 
 def _render_cluster(
-    items: Iterable[Cluster], output_dir: Path, db_path: Path, verbose: bool
+    clusters: Iterable[Cluster], output_dir: Path, db_path: Path, verbose: bool
 ) -> List[str]:
-    output_lines = []
 
+    output_lines = []
     current_cluster_member_id = None
-    for relation in sorted(
-        items, key=lambda i: (i[2], i[3])
-    ):  # sort first by cluster, then by predicate
-        _, _, cluster_member_id, cluster_member_informative_justification, predicate_type, _, object_types, object_names, object_handles, informative_justification = (
-            relation
-        )
+    for cluster in sorted(
+        clusters,
+        key=lambda i: (i.cluster_member_id, i.cluster_member_informative_justification),
+    ):
 
         # form sub-lists at the beginning of each new cluster
-        if cluster_member_id != current_cluster_member_id:
+        if cluster.cluster_member_id != current_cluster_member_id:
             if current_cluster_member_id is not None:
                 output_lines.append("</ul>")
-            current_cluster_member_id = cluster_member_id
+            current_cluster_member_id = cluster.cluster_member_id
+
             _, cluster_member_informative_justification_link = _get_informative_justification_link(
-                db_path, output_dir, cluster_member_informative_justification
+                db_path,
+                output_dir,
+                Justification(
+                    parent_id=cluster.cluster_member_informative_justification[0],
+                    child_id=cluster.cluster_member_informative_justification[1],
+                    span_start=cluster.cluster_member_informative_justification[2],
+                    span_end=cluster.cluster_member_informative_justification[3],
+                ),
             )
             output_lines.append("<li>")
             output_lines.append(
@@ -170,10 +231,17 @@ def _render_cluster(
             )
             output_lines.append("<ul>")
 
-        predicate_type_rendered = predicate_type.split("_")[-1]
+        predicate_type_rendered = cluster.predicate_type.split("_")[-1]
         output_lines.append(f"<li><u>{predicate_type_rendered}:</u>")
         mention, informative_justification_link = _get_informative_justification_link(
-            db_path, output_dir, informative_justification
+            db_path,
+            output_dir,
+            Justification(
+                parent_id=cluster.informative_justification[0],
+                child_id=cluster.informative_justification[1],
+                span_start=cluster.informative_justification[2],
+                span_end=cluster.informative_justification[3],
+            ),
         )
         if verbose:
             # Currently this program is written to expect the informative justification to exist.
@@ -184,18 +252,22 @@ def _render_cluster(
                 f"<li><b>informativeJustification</b>: <a href={informative_justification_link}>{mention}</a></li>"
             )
             output_lines.append(
-                f'<li><b>hasName</b>: {", ".join(object_names) or "Nothing found"}</li>'
+                f'<li><b>hasName</b>: {", ".join(cluster.object_names) or "Nothing found"}</li>'
             )
             output_lines.append(
-                f'<li><b>handle</b>: {", ".join(object_handles) or "Nothing found"}</li>'
+                f'<li><b>handle</b>: {", ".join(cluster.object_handles) or "Nothing found"}</li>'
             )
             output_lines.append(
-                f'<li><b>"type"</b>: {", ".join(object_types) or "Nothing found"}</li>'
+                f'<li><b>"type"</b>: {", ".join(cluster.object_types) or "Nothing found"}</li>'
             )
             output_lines.append("</ul>")
         else:
             object_line = f"<a href={informative_justification_link}>{mention}</a>"
-            identifer_list = [*object_names, *object_handles, *object_types]
+            identifer_list = [
+                *cluster.object_names,
+                *cluster.object_handles,
+                *cluster.object_types,
+            ]
             if mention.split()[0] in identifer_list:
                 identifer_list.remove(mention.split()[0])
             identifiers = immutableset(identifer_list)
@@ -211,182 +283,360 @@ def _render_cluster(
 def _parse_clusters(
     clusters: ImmutableSet[URIRef], graph: Graph
 ) -> ImmutableSet[Cluster]:
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     parsed_clusters = []
-    for cluster in clusters:
-        cluster_prototype = graph.value(
-            subject=cluster, predicate=AIDA_ANNOTATION.prototype, any=False
-        )
-        cluster_prototype_types = [
-            graph.value(subject=prototype_subj, predicate=RDF.object, any=False)
-            for prototype_subj in graph.subjects(
-                predicate=RDF.subject, object=cluster_prototype
-            )
-            if (prototype_subj, RDF.predicate, RDF.type) in graph
-        ]
 
-        if len(cluster_prototype_types) != 1:
+    for cluster in clusters:
+
+        cluster_prototype = graph.value(
+            subject=cluster, predicate=aida.prototype, any=False
+        )
+
+        cluster_prototype_types = _get_cluster_types(cluster_prototype, graph)
+
+        if len(cluster_prototype_types) > 1:
             raise ValueError(
                 "More than one cluster prototype; this should not be possible."
             )
+        if not cluster_prototype_types:
+            raise ValueError("No cluster prototype types found")
         cluster_type = cluster_prototype_types[0]
 
         cluster_members = sorted([m for m in _entities_in_cluster(graph, cluster)])
-        for cluster_member in cluster_members:
-            for member_node in sorted(
-                graph.subjects(predicate=RDF.subject, object=cluster_member)
-            ):
-                cluster_member_informative_justification = _get_informative_justification(
-                    cluster_member, graph
-                )
 
-                predicate_type = graph.value(
-                    subject=member_node, predicate=RDF.predicate, any=False
-                )
-                object_node = graph.value(
-                    subject=member_node, predicate=RDF.object, any=False
-                )
-                cluster_membership_node = graph.value(
-                    predicate=AIDA_ANNOTATION.clusterMember, object=object_node
-                )
-                cluster_node = graph.value(
-                    subject=cluster_membership_node, predicate=AIDA_ANNOTATION.cluster
-                )
+        for cluster_member in cluster_members:  #
+            cluster_member_informative_justification = _get_informative_justification(
+                cluster_member, graph
+            )
 
-                object_names = [
-                    str(obj)
-                    for obj in graph.objects(
-                        subject=object_node, predicate=AIDA_ANNOTATION.hasName
-                    )
-                ]
-                object_names.sort()
-                object_handles = [
-                    str(obj)
-                    for obj in graph.objects(
-                        subject=cluster_node, predicate=AIDA_ANNOTATION.handle
-                    )
-                ]
-                object_handles.sort()
-                rendered_object_types = [
-                    str(
-                        graph.value(subject=subj, predicate=RDF.object, any=False)
-                    ).split("#")[-1]
-                    for subj in graph.subjects(
-                        predicate=RDF.subject, object=object_node
-                    )
-                ]
-                rendered_object_types.sort()
-                informative_justification = _get_informative_justification(
-                    object_node, graph
-                )
+            for statement in _parse_statements(graph, cluster_member):
 
-                if predicate_type != RDF.type:
-                    if informative_justification == (
-                        "",
-                        "",
-                        0,
-                        0,
-                    ) or cluster_member_informative_justification == ("", "", 0, 0):
-                        print(
-                            "One or both of the informative justifications for this cluster member "
-                            "was not found. As such it might be displayed incorrectly and/or with "
-                            "a broken link. Please contact one of the maintainers of this "
-                            "reposoitory for more details or to fix this issue."
-                        )
+                if statement.predicate != RDF.type:
                     parsed_clusters.append(
-                        (
+                        Cluster(
                             cluster,
                             cluster_type,
                             cluster_member,
                             cluster_member_informative_justification,
-                            predicate_type,
-                            object_node,
-                            immutableset(rendered_object_types),
-                            immutableset(object_names),
-                            immutableset(object_handles),
-                            informative_justification,
+                            statement.predicate,
+                            statement.object,
+                            immutableset(statement.object_types),
+                            immutableset(statement.object_names),
+                            immutableset(statement.object_handles),
+                            statement.informative_justification,
                         )
                     )
 
     return immutableset(parsed_clusters)
 
 
-def _get_informative_justification(
-    node: URIRef, graph: Graph
-) -> Tuple[str, str, int, int]:
+def _parse_elements(
+    elements: ImmutableSet[URIRef], graph: Graph
+) -> ImmutableSet[Cluster]:
+    parsed_elements = []
+
+    cluster_by_member = _get_cluster_by_member(graph)
+
+    for element in elements:
+        element_informative_justification = _get_informative_justification(
+            element, graph
+        )
+
+        cluster = cluster_by_member.get(element, "No cluster found.")
+
+        statements = _parse_statements(graph, element)
+        type_statements = [s for s in statements if s.predicate == RDF.type]
+        if len(type_statements) > 1:
+            raise ValueError(
+                "More than one cluster prototype; this should not be possible."
+            )
+
+        if not type_statements:
+            element_type = None
+        else:
+            element_type = type_statements[0].object
+
+        for statement in statements:
+
+            if statement.predicate != RDF.type:
+                parsed_elements.append(
+                    Cluster(
+                        cluster,
+                        element_type,
+                        element,
+                        element_informative_justification,
+                        statement.predicate,
+                        statement.object,
+                        immutableset(statement.object_types),
+                        immutableset(statement.object_names),
+                        immutableset(statement.object_handles),
+                        statement.informative_justification,
+                    )
+                )
+
+    return immutableset(sorted(parsed_elements, key=lambda e: e.cluster_member_id))
+
+
+def _parse_statements(graph: Graph, element: URIRef):
+    return [
+        _parse_statement(graph, statement)
+        for statement in sorted(graph.subjects(predicate=RDF.subject, object=element))
+    ]
+
+
+def _parse_statement(graph: Graph, statement: URIRef):
+    """
+    Parses a statement or assertion
+    """
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    statement_predicate = graph.value(
+        subject=statement, predicate=RDF.predicate, any=False
+    )
+    statement_object = graph.value(subject=statement, predicate=RDF.object, any=False)
+    statement_object_cluster_membership = graph.value(
+        predicate=aida.clusterMember, object=statement_object
+    )
+    statement_object_cluster = graph.value(
+        subject=statement_object_cluster_membership, predicate=aida.cluster
+    )
+
+    statement_object_names = [
+        str(obj)
+        for obj in graph.objects(subject=statement_object, predicate=aida.hasName)
+    ]
+    statement_object_names.sort()
+    statement_object_handles = [
+        str(obj)
+        for obj in graph.objects(
+            subject=statement_object_cluster, predicate=aida.handle
+        )
+    ]
+    statement_object_handles.sort()
+
+    rendered_object_types = [
+        str(graph.value(subject=subj, predicate=RDF.object, any=False)).split("#")[-1]
+        for subj in graph.subjects(predicate=RDF.subject, object=statement_object)
+    ]
+    rendered_object_types.sort()
+
+    statement_object_informative_justification = _get_informative_justification(
+        statement_object, graph
+    )
+
+    return Statement(
+        predicate=statement_predicate,
+        object=statement_object,
+        object_names=statement_object_names,
+        object_handles=statement_object_handles,
+        object_types=rendered_object_types,
+        informative_justification=statement_object_informative_justification,
+    )
+
+
+def _get_informative_justification(node: URIRef, graph: Graph) -> Justification:
     """
     Grabs the informative justification for a given RDF node and returns relavent information
 
     Returns None if no informative justification field is found (This behavior could change at a
     later date).
     """
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     informative_justification = graph.value(
-        subject=node, predicate=AIDA_ANNOTATION.informativeJustification, any=False
+        subject=node, predicate=aida.informativeJustification, any=False
     )
     if informative_justification is not None:
-        span = (
-            int(
-                graph.value(
-                    subject=informative_justification,
-                    predicate=AIDA_ANNOTATION.startOffset,
-                    any=False,
-                )
-            ),
-            int(
-                graph.value(
-                    subject=informative_justification,
-                    predicate=AIDA_ANNOTATION.endOffsetInclusive,
-                    any=False,
-                )
-            ),
+        span_start = int(
+            graph.value(
+                subject=informative_justification, predicate=aida.startOffset, any=False
+            )
         )
-        source = str(
+
+        span_end = int(
             graph.value(
                 subject=informative_justification,
-                predicate=AIDA_ANNOTATION.source,
+                predicate=aida.endOffsetInclusive,
                 any=False,
             )
         )
 
-        source_doc = str(
-            graph.value(
-                subject=informative_justification,
-                predicate=AIDA_ANNOTATION.sourceDocument,
-                any=False,
-            )
+        source = graph.value(
+            subject=informative_justification, predicate=aida.source, any=False
         )
 
-        return (source, source_doc, *span)
-    else:
-        return ("", "", 0, 0)
+        source_doc = graph.value(
+            subject=informative_justification, predicate=aida.sourceDocument, any=False
+        )
+
+        return Justification(
+            child_id=str(source) if source else None,
+            parent_id=str(source_doc) if source_doc else None,
+            span_start=span_start,
+            span_end=span_end,
+        )
+
+    return Justification(None, None, 0, 0)
 
 
 def _get_informative_justification_link(
-    db_path: Path,
-    output_dir: Path,
-    informative_justification: Tuple[str, str, int, int],
+    db_path: Path, output_dir: Path, informative_justification: Justification
 ) -> Tuple[str, Path]:
     doc_dir = output_dir / "docs"
     doc_dir.mkdir(exist_ok=True)
 
-    output_file, mention = render_html(
-        db_path,
-        doc_dir,
-        informative_justification[1],
-        informative_justification[2],
-        informative_justification[3],
+    child_id = informative_justification.child_id
+    parent_id = informative_justification.parent_id
+    span_start = informative_justification.span_start
+    span_end = informative_justification.span_end
+
+    if parent_id:
+        parent_or_child_id = parent_id
+    elif child_id:
+        parent_or_child_id = child_id
+    else:
+        raise ValueError(
+            "Informative justification must have either a parent id or a child id"
+        )
+
+    corpus = Corpus(db_path)
+    output_file, mention = _render_html(
+        corpus, doc_dir, parent_or_child_id, span_start, span_end
     )
 
-    mention += f" ({informative_justification[2]}:{informative_justification[3]})"
+    mention += f" ({span_start}:{span_end})"
     return mention, output_file.relative_to(output_dir)
 
 
-def _entities_in_cluster(g: Graph, cluster: URIRef) -> ImmutableSet[URIRef]:
-    return immutableset(
-        flatten_once_to_list(
-            g.objects(cluster_membership, AIDA_ANNOTATION.clusterMember)
-            for cluster_membership in g.subjects(AIDA_ANNOTATION.cluster, cluster)
+def _render_html(
+    corpus: Corpus, output_dir: Path, parent_or_child_id: str, start: int, end: int
+) -> Tuple[Path, str]:
+    """Outputs either the whole document rendered in HTML or a subspan. `end` is inclusive."""
+
+    document = _get_document(corpus, parent_or_child_id)
+    if not document:
+        raise ValueError(
+            f"{document['parent_id']} not present in the document database."
+        )
+
+    justification_spans: ImmutableDict[str, Span] = immutabledict(
+        {f"{start}:{end}": Span(start, end + 1)}
+    )
+
+    contexts = contexts_from_justifications(justification_spans, document)
+
+    to_render, _ = render_document(document["fulltext"], justification_spans, contexts)
+    if not to_render:
+        raise ValueError("Could not find anything to render.")
+
+    final_html = _render_template(
+        document=immutabledict(
+            {
+                "id": document["parent_id"],
+                "title": document["title"],
+                "html": to_render,
+                "span": f"{start}:{end}",
+            }
         )
     )
+    output_file = output_dir / f"{document['parent_id']}_{start}-{end}.html"
+    output_file.write_text(final_html)
+
+    return output_file, document["fulltext"][start : end + 1]
+
+
+def _render_template(document: ImmutableDict[str, str]):
+    return Template(
+        """
+<!doctype html>
+<html lang="en">
+  <head>
+
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <link
+      rel="stylesheet"
+      href="../style.css">
+  </head>
+
+  <body>
+    <div class="card" style="width:100%;float:left;">
+      <div class="card-header text-center bg-light-custom">
+        {{ document.title }}
+      </div>
+      <div class="card-body document-details-modal modal-body text-left">
+        {{ document.html|safe }}
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        var mention = document.getElementById('contextof-{{ document.span }}');
+        mention.scrollIntoView({
+            'behavior': 'auto',
+            'block': 'center',
+            'inline': 'center'
+        });
+      })();
+    </script>
+  </body>
+</html>
+"""
+    ).render(document=document)
+
+
+def _get_document(corpus: Corpus, parent_or_child_id: str):
+    try:
+        document = corpus[parent_or_child_id]
+    except StopIteration:
+
+        matching_documents = list(
+            corpus.query(
+                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
+            )
+        )
+
+        if not matching_documents:
+            raise ValueError(f"could not find {parent_or_child_id}")
+
+        document = matching_documents[0]
+
+    title = get_title_sentence(document["fulltext"])
+    return immutabledict({"id": document["parent_id"], "title": title, **document})
+
+
+def _entities_in_cluster(g: Graph, cluster: URIRef) -> ImmutableSet[URIRef]:
+    aida = Namespace(dict(g.namespace_manager.namespaces())["aida"])
+    return immutableset(
+        flatten_once_to_list(
+            g.objects(cluster_membership, aida.clusterMember)
+            for cluster_membership in g.subjects(aida.cluster, cluster)
+        )
+    )
+
+
+def _get_cluster_types(cluster: URIRef, graph: Graph):
+    return [
+        graph.value(subject=prototype_subj, predicate=RDF.object, any=False)
+        for prototype_subj in graph.subjects(predicate=RDF.subject, object=cluster)
+        if (prototype_subj, RDF.predicate, RDF.type) in graph
+    ]
+
+
+def _get_cluster_by_member(graph: Graph):
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    cluster_by_member = {}
+
+    for membership in graph.subjects(object=aida.ClusterMembership):
+        cluster = graph.value(subject=membership, predicate=aida.cluster)
+        member = graph.value(subject=membership, predicate=aida.clusterMember)
+
+        if member not in cluster_by_member:
+            cluster_by_member[member] = cluster
+        else:
+            raise ValueError(
+                f"Member {member} assigned to more than one cluster. This should not happen."
+            )
+
+    return cluster_by_member
 
 
 def _write_css_styling(css_file: Path):
