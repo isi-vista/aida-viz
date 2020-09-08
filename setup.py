@@ -17,7 +17,6 @@ setuptools.setup(
         "jinja2",
         "pandas",
         "tqdm",
-        "aida-interchange>=1.2.1",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

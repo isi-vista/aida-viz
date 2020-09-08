@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
-from aida_interchange.rdf_ontologies import interchange_ontology as AIDA_ANNOTATION
 from attr import attrib, attrs
 from immutablecollections import (
     ImmutableDict,
@@ -10,7 +9,7 @@ from immutablecollections import (
     immutableset,
 )
 from jinja2 import Template
-from rdflib import RDF, Graph
+from rdflib import RDF, Graph, Namespace
 from rdflib.term import URIRef
 from vistautils.misc_utils import flatten_once_to_list
 from vistautils.span import Span
@@ -102,13 +101,14 @@ class Hypothesis:
 
     @staticmethod
     def from_graph(graph: Graph) -> "Hypothesis":
-        all_clusters = sorted(graph.subjects(RDF.type, AIDA_ANNOTATION.SameAsCluster))
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        all_clusters = sorted(graph.subjects(RDF.type, aida.SameAsCluster))
         event_clusters = immutableset(
             [
                 cluster
                 for cluster in all_clusters
                 if all(
-                    (event, RDF.type, AIDA_ANNOTATION.Event) in graph
+                    (event, RDF.type, aida.Event) in graph
                     for event in _entities_in_cluster(graph, cluster)
                 )
             ]
@@ -121,7 +121,7 @@ class Hypothesis:
                     cluster
                     for cluster in all_clusters
                     if all(
-                        (relation, RDF.type, AIDA_ANNOTATION.Relation) in graph
+                        (relation, RDF.type, aida.Relation) in graph
                         for relation in _entities_in_cluster(graph, cluster)
                     )
                 ]
@@ -130,7 +130,7 @@ class Hypothesis:
         relations = _parse_clusters(relation_clusters, graph)
 
         return Hypothesis(
-            name=graph.value(predicate=RDF.type, object=AIDA_ANNOTATION.Hypothesis),
+            name=graph.value(predicate=RDF.type, object=aida.Hypothesis),
             events=events,
             relations=relations,
             entities=immutableset(),
@@ -138,18 +138,19 @@ class Hypothesis:
 
     @staticmethod
     def from_graph_by_elements(graph: Graph) -> "Hypothesis":
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
         event_elements: ImmutableSet[URIRef] = immutableset(
-            graph.subjects(object=AIDA_ANNOTATION.Event)
+            graph.subjects(object=aida.Event)
         )
         events: ImmutableSet[Cluster] = _parse_elements(event_elements, graph)
 
         relation_elements: ImmutableSet[URIRef] = immutableset(
-            graph.subjects(object=AIDA_ANNOTATION.Relation)
+            graph.subjects(object=aida.Relation)
         )
         relations: ImmutableSet[Cluster] = _parse_elements(relation_elements, graph)
 
         return Hypothesis(
-            name=graph.value(predicate=RDF.type, object=AIDA_ANNOTATION.Hypothesis),
+            name=graph.value(predicate=RDF.type, object=aida.Hypothesis),
             events=events,
             relations=relations,
             entities=immutableset(),
@@ -282,12 +283,13 @@ def _render_cluster(
 def _parse_clusters(
     clusters: ImmutableSet[URIRef], graph: Graph
 ) -> ImmutableSet[Cluster]:
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     parsed_clusters = []
 
     for cluster in clusters:
 
         cluster_prototype = graph.value(
-            subject=cluster, predicate=AIDA_ANNOTATION.prototype, any=False
+            subject=cluster, predicate=aida.prototype, any=False
         )
 
         cluster_prototype_types = _get_cluster_types(cluster_prototype, graph)
@@ -386,29 +388,27 @@ def _parse_statement(graph: Graph, statement: URIRef):
     """
     Parses a statement or assertion
     """
-
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     statement_predicate = graph.value(
         subject=statement, predicate=RDF.predicate, any=False
     )
     statement_object = graph.value(subject=statement, predicate=RDF.object, any=False)
     statement_object_cluster_membership = graph.value(
-        predicate=AIDA_ANNOTATION.clusterMember, object=statement_object
+        predicate=aida.clusterMember, object=statement_object
     )
     statement_object_cluster = graph.value(
-        subject=statement_object_cluster_membership, predicate=AIDA_ANNOTATION.cluster
+        subject=statement_object_cluster_membership, predicate=aida.cluster
     )
 
     statement_object_names = [
         str(obj)
-        for obj in graph.objects(
-            subject=statement_object, predicate=AIDA_ANNOTATION.hasName
-        )
+        for obj in graph.objects(subject=statement_object, predicate=aida.hasName)
     ]
     statement_object_names.sort()
     statement_object_handles = [
         str(obj)
         for obj in graph.objects(
-            subject=statement_object_cluster, predicate=AIDA_ANNOTATION.handle
+            subject=statement_object_cluster, predicate=aida.handle
         )
     ]
     statement_object_handles.sort()
@@ -440,36 +440,31 @@ def _get_informative_justification(node: URIRef, graph: Graph) -> Justification:
     Returns None if no informative justification field is found (This behavior could change at a
     later date).
     """
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     informative_justification = graph.value(
-        subject=node, predicate=AIDA_ANNOTATION.informativeJustification, any=False
+        subject=node, predicate=aida.informativeJustification, any=False
     )
     if informative_justification is not None:
         span_start = int(
             graph.value(
-                subject=informative_justification,
-                predicate=AIDA_ANNOTATION.startOffset,
-                any=False,
+                subject=informative_justification, predicate=aida.startOffset, any=False
             )
         )
 
         span_end = int(
             graph.value(
                 subject=informative_justification,
-                predicate=AIDA_ANNOTATION.endOffsetInclusive,
+                predicate=aida.endOffsetInclusive,
                 any=False,
             )
         )
 
         source = graph.value(
-            subject=informative_justification,
-            predicate=AIDA_ANNOTATION.source,
-            any=False,
+            subject=informative_justification, predicate=aida.source, any=False
         )
 
         source_doc = graph.value(
-            subject=informative_justification,
-            predicate=AIDA_ANNOTATION.sourceDocument,
-            any=False,
+            subject=informative_justification, predicate=aida.sourceDocument, any=False
         )
 
         return Justification(
@@ -609,10 +604,11 @@ def _get_document(corpus: Corpus, parent_or_child_id: str):
 
 
 def _entities_in_cluster(g: Graph, cluster: URIRef) -> ImmutableSet[URIRef]:
+    aida = Namespace(dict(g.namespace_manager.namespaces())["aida"])
     return immutableset(
         flatten_once_to_list(
-            g.objects(cluster_membership, AIDA_ANNOTATION.clusterMember)
-            for cluster_membership in g.subjects(AIDA_ANNOTATION.cluster, cluster)
+            g.objects(cluster_membership, aida.clusterMember)
+            for cluster_membership in g.subjects(aida.cluster, cluster)
         )
     )
 
@@ -626,13 +622,12 @@ def _get_cluster_types(cluster: URIRef, graph: Graph):
 
 
 def _get_cluster_by_member(graph: Graph):
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
     cluster_by_member = {}
 
-    for membership in graph.subjects(object=AIDA_ANNOTATION.ClusterMembership):
-        cluster = graph.value(subject=membership, predicate=AIDA_ANNOTATION.cluster)
-        member = graph.value(
-            subject=membership, predicate=AIDA_ANNOTATION.clusterMember
-        )
+    for membership in graph.subjects(object=aida.ClusterMembership):
+        cluster = graph.value(subject=membership, predicate=aida.cluster)
+        member = graph.value(subject=membership, predicate=aida.clusterMember)
 
         if member not in cluster_by_member:
             cluster_by_member[member] = cluster

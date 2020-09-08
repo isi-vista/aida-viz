@@ -1,8 +1,7 @@
 import argparse
 from pathlib import Path
 
-from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
-from rdflib import RDF, Graph
+from rdflib import RDF, Graph, Namespace
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
@@ -11,14 +10,12 @@ from aida_viz.hypothesis import Hypothesis
 
 
 def main(
-    aif_file: Path, out_dir: Path, db_path: Path, verbose: bool, by_clusters: bool
+    aif_file: Path, out_dir: Path, db_path: Path, by_clusters: bool, verbose: bool
 ) -> Path:
-    graph = Graph()
+    graph: Graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
-    import ipdb
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
 
-    ipdb.set_trace(context=30)
-    print("by clusters:", by_clusters)
     if by_clusters:
         out_dir.mkdir(exist_ok=True)
         if verbose:
@@ -29,16 +26,10 @@ def main(
         hypothesis = Hypothesis.from_graph(graph)
         hypothesis.visualize(out_dir, output_file, db_path, verbose)
     else:
-        entities = list(
-            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Entity)
-        )
-        events = list(graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Event))
-        relations = list(
-            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Relation)
-        )
-        clusters = list(
-            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.SameAsCluster)
-        )
+        entities = list(graph.subjects(predicate=RDF.type, object=aida.Entity))
+        events = list(graph.subjects(predicate=RDF.type, object=aida.Event))
+        relations = list(graph.subjects(predicate=RDF.type, object=aida.Relation))
+        clusters = list(graph.subjects(predicate=RDF.type, object=aida.SameAsCluster))
 
         element_ids = clusters + entities + events + relations
         elements = {
@@ -74,8 +65,8 @@ if __name__ == "__main__":
         dest="out_dir",
         default="./visualizer_results",
     )
-    parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--by_clusters", action="store_true")
+    parser.add_argument("--verbose", "-v", action="store_true")
 
     output = main(**vars(parser.parse_args()))
 

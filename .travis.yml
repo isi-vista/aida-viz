@@ -8,8 +8,6 @@ cache:
 install:
     - pip install .
     - pip install -r dev-requirements.txt
-    # - cd .. && git clone https://github.com/NextCenturyCorporation/AIDA-Interchange-Format.git && cd AIDA-Interchange-Format/python && python setup.py install && cd ../../aida-viz
-
 
 jobs:
     include:

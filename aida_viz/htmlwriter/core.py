@@ -115,12 +115,16 @@ class HtmlWriter:
         if element.statements:
             html_lines.append(statement_list)
 
-        if element.names or element.handles:
+        if element.names or element.handles or element.prototypes:
             html_lines.append("<ul>")
             if element.names:
-                html_lines.append(f"<li>hasName: {', '.join(element.names)}</li>")
+                html_lines.append(f"<li>names: {', '.join(element.names)}</li>")
             if element.handles:
-                html_lines.append(f"<li>handle: {', '.join(element.handles)}</li>")
+                html_lines.append(f"<li>handles: {', '.join(element.handles)}</li>")
+            if element.prototypes:
+                html_lines.append(
+                    f"<li>prototypes: {', '.join([self.anchor_link(p) for p in element.prototypes])}</li>"
+                )
             html_lines.append("</ul>")
         html_lines.append("</div><br>")
         return "\n".join(html_lines)
@@ -151,16 +155,11 @@ class HtmlWriter:
         self, statement: Statement, type_prefix: Optional[str] = None
     ) -> str:
         _, pred = split_uri(statement.predicate)
-        _, obj = split_uri(statement.object)
-
-        obj_anchor_link = (
-            f"<a href=#{obj}>{obj}</a>" if statement.object in self.elements else obj
-        )
 
         if type_prefix:
             pred = pred.replace(type_prefix, "")
 
-        return f"{pred}: {obj_anchor_link} (Justified by {self.render_justifications(statement.justified_by)})"
+        return f"{pred}: {self.anchor_link(statement.object)} (Justified by {self.render_justifications(statement.justified_by)})"
 
     def render_justifications(self, justifications: List[Justification]) -> str:
         """Returns HTML for a comma-separated list of justification links"""
@@ -176,3 +175,9 @@ class HtmlWriter:
             link = f'<a href=docs/{document_id}_{j.span_start}-{j.span_end}.html>"{spanning_tokens}" [{j.span_start}:{j.span_end}]</a>'
             rendered_justifications.update([link])
         return ", ".join(rendered_justifications)
+
+    def anchor_link(self, element_id: URIRef) -> str:
+        _, suffix = split_uri(element_id)
+        return (
+            f"<a href=#{suffix}>{suffix}</a>" if element_id in self.elements else suffix
+        )

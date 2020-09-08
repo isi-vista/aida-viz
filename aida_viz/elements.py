@@ -1,43 +1,38 @@
 from typing import List, NamedTuple, Optional
 
-from aida_interchange.rdf_ontologies import interchange_ontology as AIDA_ANNOTATION
-from rdflib import RDF, Graph, URIRef
+from rdflib import RDF, Graph, Namespace, URIRef
 
 
 class Element(NamedTuple):
     element_id: URIRef
     element_type: URIRef
-    prototype: Optional[URIRef] = None
-    names: Optional[List[str]] = []
-    handles: Optional[List[str]] = []
+    prototypes: List[URIRef] = []
+    names: List[str] = []
+    handles: List[str] = []
     informative_justifications: List["Justification"] = []
     justified_by: List["Justification"] = []
     statements: List["Statement"] = []
 
     @staticmethod
     def from_uriref(element_id: URIRef, *, graph: Graph):
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+
         informativejustification_ids = list(
-            graph.objects(
-                subject=element_id, predicate=AIDA_ANNOTATION.informativeJustification
-            )
+            graph.objects(subject=element_id, predicate=aida.informativeJustification)
         )
         justifiedby_ids = list(
-            graph.objects(subject=element_id, predicate=AIDA_ANNOTATION.justifiedBy)
+            graph.objects(subject=element_id, predicate=aida.justifiedBy)
         )
         statement_ids = list(graph.subjects(predicate=RDF.subject, object=element_id))
 
         return Element(
             element_id=element_id,
             element_type=graph.value(subject=element_id, predicate=RDF.type, any=False),
-            prototype=graph.value(
-                subject=element_id, predicate=AIDA_ANNOTATION.prototype, any=False
+            prototypes=list(
+                graph.objects(subject=element_id, predicate=aida.prototype)
             ),
-            names=list(
-                graph.objects(subject=element_id, predicate=AIDA_ANNOTATION.hasName)
-            ),
-            handles=list(
-                graph.objects(subject=element_id, predicate=AIDA_ANNOTATION.handle)
-            ),
+            names=list(graph.objects(subject=element_id, predicate=aida.hasName)),
+            handles=list(graph.objects(subject=element_id, predicate=aida.handle)),
             informative_justifications=[
                 Justification.from_uriref(inf_j, graph=graph)
                 for inf_j in informativejustification_ids
@@ -58,6 +53,8 @@ class Statement(NamedTuple):
 
     @staticmethod
     def from_uriref(statement_id: URIRef, *, graph: Graph):
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+
         statement_subject = graph.value(
             subject=statement_id, predicate=RDF.subject, any=False
         )
@@ -68,25 +65,23 @@ class Statement(NamedTuple):
             subject=statement_id, predicate=RDF.object, any=False
         )
         justifiedby_ids = list(
-            graph.objects(subject=statement_id, predicate=AIDA_ANNOTATION.justifiedBy)
+            graph.objects(subject=statement_id, predicate=aida.justifiedBy)
         )
 
         textjustification_ids = [
             node
             for node in justifiedby_ids
-            if (node, RDF.type, AIDA_ANNOTATION.TextJustification) in graph
+            if (node, RDF.type, aida.TextJustification) in graph
         ]
         compoundjustification_ids = [
             node
             for node in justifiedby_ids
-            if (node, RDF.type, AIDA_ANNOTATION.CompoundJustification) in graph
+            if (node, RDF.type, aida.CompoundJustification) in graph
         ]
 
         for cj in compoundjustification_ids:
             textjustification_ids.extend(
-                graph.objects(
-                    subject=cj, predicate=AIDA_ANNOTATION.containedJustification
-                )
+                graph.objects(subject=cj, predicate=aida.containedJustification)
             )
 
         return Statement(
@@ -109,27 +104,23 @@ class Justification(NamedTuple):
 
     @staticmethod
     def from_uriref(justification_id: URIRef, *, graph: Graph):
-        if not (justification_id, RDF.type, AIDA_ANNOTATION.TextJustification) in graph:
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+
+        if not (justification_id, RDF.type, aida.TextJustification) in graph:
             print(f"{justification_id} does not have type TextJustification in graph.")
 
         span_start = graph.value(
-            subject=justification_id, predicate=AIDA_ANNOTATION.startOffset, any=False
+            subject=justification_id, predicate=aida.startOffset, any=False
         )
 
         span_end = graph.value(
-            subject=justification_id,
-            predicate=AIDA_ANNOTATION.endOffsetInclusive,
-            any=False,
+            subject=justification_id, predicate=aida.endOffsetInclusive, any=False
         )
 
-        source = graph.value(
-            subject=justification_id, predicate=AIDA_ANNOTATION.source, any=False
-        )
+        source = graph.value(subject=justification_id, predicate=aida.source, any=False)
 
         source_doc = graph.value(
-            subject=justification_id,
-            predicate=AIDA_ANNOTATION.sourceDocument,
-            any=False,
+            subject=justification_id, predicate=aida.sourceDocument, any=False
         )
 
         if span_start and span_end and (source or source_doc):
