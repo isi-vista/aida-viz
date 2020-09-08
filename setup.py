@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-from distutils.core import setup
+import setuptools
 
-setup(
+setuptools.setup(
     name="aida_viz",
     version="0.1.0",
     author="USC Information Sciences Institute",
