@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from aida_interchange.rdf_ontologies import interchange_ontology as AIDA_ANNOTATION
+from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
 from rdflib import RDF, Graph
 
 from aida_viz.corpus.core import Corpus
@@ -11,12 +11,24 @@ from aida_viz.hypothesis import Hypothesis
 
 
 def main(
-    aif_file: Path, out_dir: Path, db_path: Path, verbose: bool, by_elements: bool
+    aif_file: Path, out_dir: Path, db_path: Path, verbose: bool, by_clusters: bool
 ) -> Path:
     graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
+    import ipdb
 
-    if by_elements:
+    ipdb.set_trace(context=30)
+    print("by clusters:", by_clusters)
+    if by_clusters:
+        out_dir.mkdir(exist_ok=True)
+        if verbose:
+            output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
+        else:
+            output_file = out_dir / f"{aif_file.stem}_visualization.html"
+        output_file.touch(exist_ok=True)
+        hypothesis = Hypothesis.from_graph(graph)
+        hypothesis.visualize(out_dir, output_file, db_path, verbose)
+    else:
         entities = list(
             graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Entity)
         )
@@ -37,17 +49,6 @@ def main(
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements)
         renderer.write_to_dir(out_dir)
-
-    else:
-        out_dir.mkdir(exist_ok=True)
-        if verbose:
-            output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
-        else:
-            output_file = out_dir / f"{aif_file.stem}_visualization.html"
-        output_file.touch(exist_ok=True)
-        hypothesis = Hypothesis.from_graph(graph)
-        hypothesis.visualize(out_dir, output_file, db_path, verbose)
-
     return out_dir
 
 
@@ -74,7 +75,7 @@ if __name__ == "__main__":
         default="./visualizer_results",
     )
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--by_elements", action="store_true")
+    parser.add_argument("--by_clusters", action="store_true")
 
     output = main(**vars(parser.parse_args()))
 
