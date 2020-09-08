@@ -5,6 +5,8 @@ import nltk
 from immutablecollections import ImmutableDict, immutabledict
 from vistautils.span import Span
 
+from aida_viz.elements import Justification
+
 
 def get_sentence_spans(document_text: str) -> List[Span]:
     tokenizer = nltk.tokenize.punkt.PunktSentenceTokenizer()
@@ -152,3 +154,23 @@ def render_document(
             }
         ),
     )
+
+
+def render_single_justification_document(
+    document: dict, justification: Justification
+) -> str:
+
+    span_start = justification.span_start
+    span_end = justification.span_end
+
+    justification_spans: ImmutableDict[str, Span] = immutabledict(
+        {f"{span_start}:{span_end}": Span(span_start, span_end + 1)}
+    )
+
+    contexts = contexts_from_justifications(justification_spans, document)
+
+    to_render, _ = render_document(document["fulltext"], justification_spans, contexts)
+    if not to_render:
+        raise ValueError("Could not find anything to render.")
+
+    return to_render
