@@ -32,8 +32,10 @@ class Corpus:
                 yield dict(result)
 
     def __getitem__(self, parent_id: str):
-        return list(
-            self.query(f'SELECT * FROM documents WHERE parent_id is "{parent_id}"')
+        return next(
+            iter(
+                self.query(f'SELECT * FROM documents WHERE parent_id is "{parent_id}"')
+            )
         )
 
 

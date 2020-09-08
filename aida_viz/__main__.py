@@ -1,8 +1,12 @@
 import argparse
 from pathlib import Path
 
-from rdflib import Graph
+from aida_interchange.aida_rdf_ontologies import AIDA_ANNOTATION
+from rdflib import RDF, Graph
 
+from aida_viz.corpus.core import Corpus
+from aida_viz.elements import Element
+from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
 
 
@@ -12,19 +16,42 @@ def main(
     graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
 
-    out_dir.mkdir(exist_ok=True)
-    if verbose:
-        output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
-    else:
-        output_file = out_dir / f"{aif_file.stem}_visualization.html"
-    output_file.touch(exist_ok=True)
-
     if by_elements:
-        hypothesis = Hypothesis.from_graph_by_elements(graph)
-    else:
-        hypothesis = Hypothesis.from_graph(graph)
+        entities = list(
+            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Entity)
+        )
+        events = list(graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Event))
+        relations = list(
+            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.Relation)
+        )
+        clusters = list(
+            graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.SameAsCluster)
+        )
 
-    hypothesis.visualize(out_dir, output_file, db_path, verbose)
+        print(f"{len(entities)} entities")
+        print(f"{len(events)} events")
+        print(f"{len(relations)} relations")
+        print(f"{len(clusters)} clusters")
+
+        element_ids = clusters + entities + events + relations
+        elements = {
+            element_id: Element.from_uriref(element_id, graph=graph)
+            for element_id in element_ids
+        }
+
+        corpus = Corpus(db_path)
+        renderer = HtmlWriter(corpus, elements)
+        renderer.write_to_dir(out_dir)
+
+    else:
+        out_dir.mkdir(exist_ok=True)
+        if verbose:
+            output_file = out_dir / f"{aif_file.stem}_visualization_verbose.html"
+        else:
+            output_file = out_dir / f"{aif_file.stem}_visualization.html"
+        output_file.touch(exist_ok=True)
+        hypothesis = Hypothesis.from_graph(graph)
+        hypothesis.visualize(out_dir, output_file, db_path, verbose)
 
     return output_file
 

@@ -8,6 +8,8 @@ from immutablecollections import ImmutableDict, immutabledict
 from jinja2 import Template
 from vistautils.span import Span
 
+from aida_viz.corpus.core import Corpus
+
 
 def document_entry(db_path: Path, parent_or_child_id: str) -> ImmutableDict[str, str]:
     with sqlite3.connect(str(db_path), detect_types=sqlite3.PARSE_DECLTYPES) as db:
@@ -50,8 +52,23 @@ def get_title_sentence(document_text: str) -> Optional[str]:
     return None
 
 
-def get_document(db_path: Path, parent_or_child_id: str) -> ImmutableDict[str, str]:
-    document = document_entry(db_path, parent_or_child_id)
+def get_document(corpus: Corpus, parent_or_child_id: str):
+    # document = document_entry(db_path, parent_or_child_id)
+    try:
+        document = corpus[parent_or_child_id]
+    except StopIteration:
+
+        matching_documents = list(
+            corpus.query(
+                f'SELECT * FROM documents WHERE child_id=="{parent_or_child_id}"'
+            )
+        )
+
+        if not matching_documents:
+            raise ValueError(f"could not find {parent_or_child_id}")
+
+        document = matching_documents[0]
+
     title = get_title_sentence(document["fulltext"])
     return immutabledict({"id": document["parent_id"], "title": title, **document})
 
@@ -216,40 +233,3 @@ def render_template(document: ImmutableDict[str, str]):
 </html>
 """
     ).render(document=document)
-
-
-def render_html(
-    db_path: Path, output_dir: Path, parent_or_child_id: str, start: int, end: int
-) -> Tuple[Path, str]:
-    """Outputs either the whole document rendered in HTML or a subspan. `end` is inclusive."""
-
-    document = get_document(db_path, parent_or_child_id)
-    if not document:
-        raise ValueError(
-            f"{document['parent_id']} not present in the document database."
-        )
-
-    justification_spans: ImmutableDict[str, Span] = immutabledict(
-        {f"{start}:{end}": Span(start, end + 1)}
-    )
-
-    contexts = contexts_from_justifications(justification_spans, document)
-
-    to_render, _ = render_document(document["fulltext"], justification_spans, contexts)
-    if not to_render:
-        raise ValueError("Could not find anything to render.")
-
-    final_html = render_template(
-        document=immutabledict(
-            {
-                "id": document["parent_id"],
-                "title": document["title"],
-                "html": to_render,
-                "span": f"{start}:{end}",
-            }
-        )
-    )
-    output_file = output_dir / f"{document['parent_id']}_{start}-{end}.html"
-    output_file.write_text(final_html)
-
-    return output_file, document["fulltext"][start : end + 1]
