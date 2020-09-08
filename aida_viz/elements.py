@@ -15,14 +15,22 @@ class Element(NamedTuple):
 
     @staticmethod
     def from_uriref(element_id: URIRef, *, graph: Graph):
+
         aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
 
-        informativejustification_ids = list(
-            graph.objects(subject=element_id, predicate=aida.informativeJustification)
-        )
-        justifiedby_ids = list(
-            graph.objects(subject=element_id, predicate=aida.justifiedBy)
-        )
+        informativejustification_ids = [
+            j
+            for j in graph.objects(
+                subject=element_id, predicate=aida.informativeJustification
+            )
+            if (j, RDF.type, aida.TextJustification) in graph
+        ]
+
+        justifiedby_ids = [
+            j
+            for j in graph.objects(subject=element_id, predicate=aida.justifiedBy)
+            if (j, RDF.type, aida.TextJustification) in graph
+        ]
         statement_ids = list(graph.subjects(predicate=RDF.subject, object=element_id))
 
         return Element(
@@ -107,7 +115,9 @@ class Justification(NamedTuple):
         aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
 
         if not (justification_id, RDF.type, aida.TextJustification) in graph:
-            print(f"{justification_id} does not have type TextJustification in graph.")
+            raise ValueError(
+                f"{justification_id} does not have type TextJustification in graph."
+            )
 
         span_start = graph.value(
             subject=justification_id, predicate=aida.startOffset, any=False
@@ -132,8 +142,6 @@ class Justification(NamedTuple):
                 span_end=int(span_end),
             )
         else:
-            print(
-                ValueError(
-                    f"{justification_id} requires span start and end, and one of source or source_doc"
-                )
+            raise ValueError(
+                f"{justification_id} requires span start and end, and one of source or source_doc"
             )
