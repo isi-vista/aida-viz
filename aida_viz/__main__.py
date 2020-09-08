@@ -28,11 +28,6 @@ def main(
             graph.subjects(predicate=RDF.type, object=AIDA_ANNOTATION.SameAsCluster)
         )
 
-        print(f"{len(entities)} entities")
-        print(f"{len(events)} events")
-        print(f"{len(relations)} relations")
-        print(f"{len(clusters)} clusters")
-
         element_ids = clusters + entities + events + relations
         elements = {
             element_id: Element.from_uriref(element_id, graph=graph)
@@ -53,7 +48,7 @@ def main(
         hypothesis = Hypothesis.from_graph(graph)
         hypothesis.visualize(out_dir, output_file, db_path, verbose)
 
-    return output_file
+    return out_dir
 
 
 # pylint: disable=C0103
@@ -83,4 +78,4 @@ if __name__ == "__main__":
 
     output = main(**vars(parser.parse_args()))
 
-    print(f"Vizualization file: {output}")
+    print(f"Vizualization: {output}")
