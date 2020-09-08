@@ -2,7 +2,7 @@
 
 # AIDA Vizualization Tools
 
-This repository contains the package `aida_viz`, a tool for visualizing "hypotheses" (from AIDA TA3) in a simple HTML format.
+This repository contains the package `aida_viz`, a tool for visualizing AIF knowledge elements in a simple HTML format.
 
 ## Installation
 
@@ -14,7 +14,7 @@ You will also need to manually install the Python package included in the [AIDA 
 
 ## Usage
 
-To generate visualizations, `aida_viz` requires a small (<1gb) SQLite database file containing the text documents found in the AIDA Phase 1 Evaluation Source Data, `LDC2019E42` (download available via the [LDC Catalog](https://catalog.ldc.upenn.edu)).
+To generate visualizations, `aida_viz` requires an SQLite database file containing the text documents found in the relevant AIDA Evaluation Source Data (for example, the Phase 1 Evaluation Source Data `LDC2019E42` is available via the [LDC Catalog](https://catalog.ldc.upenn.edu)).
 
 **The easiest way to obtain this SQLite database file is to contact the maintainers of this repository and request it from them.** However, it is possible to generate the database from the original LDC source data.
 
