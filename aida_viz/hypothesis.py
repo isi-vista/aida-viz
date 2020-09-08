@@ -16,8 +16,11 @@ from vistautils.misc_utils import flatten_once_to_list
 from vistautils.span import Span
 
 from aida_viz.corpus.core import Corpus
-
-from .documents import contexts_from_justifications, get_title_sentence, render_document
+from aida_viz.documents import (
+    contexts_from_justifications,
+    get_title_sentence,
+    render_document,
+)
 
 
 class Cluster(NamedTuple):
