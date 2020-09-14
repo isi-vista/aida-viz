@@ -7,6 +7,8 @@ class Element(NamedTuple):
     element_id: URIRef
     element_type: URIRef
     prototypes: List[URIRef] = []
+    members: List[URIRef] = []
+    clusters: List[URIRef] = []
     names: List[str] = []
     handles: List[str] = []
     informative_justifications: List["Justification"] = []
@@ -38,6 +40,12 @@ class Element(NamedTuple):
             element_type=graph.value(subject=element_id, predicate=RDF.type, any=False),
             prototypes=list(
                 graph.objects(subject=element_id, predicate=aida.prototype)
+            ),
+            members=list(
+                graph.objects(subject=element_id, predicate=aida.clusterMember)
+            ),
+            clusters=list(
+                graph.objects(subject=element_id, predicate=aida.cluster)
             ),
             names=list(graph.objects(subject=element_id, predicate=aida.hasName)),
             handles=list(graph.objects(subject=element_id, predicate=aida.handle)),

@@ -43,7 +43,7 @@ class HtmlWriter:
                     j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
                 )
                 document = self.corpus[document_id]
-
+                
                 justification_document_html = render_single_justification_document(
                     document, j
                 )
@@ -108,7 +108,7 @@ class HtmlWriter:
         if element.statements:
             html_lines.append(statement_list)
 
-        if element.names or element.handles or element.prototypes:
+        if element.names or element.handles or element.prototypes or element.members or element.clusters:
             html_lines.append("<ul>")
             if element.names:
                 html_lines.append(f"<li>names: {', '.join(element.names)}</li>")
@@ -117,6 +117,14 @@ class HtmlWriter:
             if element.prototypes:
                 html_lines.append(
                     f"<li>prototypes: {', '.join([self.anchor_link(p) for p in element.prototypes])}</li>"
+                )
+            if element.members:
+                html_lines.append(
+                    f"<li>members: {', '.join([self.anchor_link(p) for p in element.members])}</li>"                
+                )
+            if element.clusters:
+                html_lines.append(
+                    f"<li>clusters: {', '.join([self.anchor_link(p) for p in element.clusters])}</li>"                
                 )
             html_lines.append("</ul>")
         html_lines.append("</div><br>")
