@@ -44,9 +44,7 @@ class Element(NamedTuple):
             members=list(
                 graph.objects(subject=element_id, predicate=aida.clusterMember)
             ),
-            clusters=list(
-                graph.objects(subject=element_id, predicate=aida.cluster)
-            ),
+            clusters=list(graph.objects(subject=element_id, predicate=aida.cluster)),
             names=list(graph.objects(subject=element_id, predicate=aida.hasName)),
             handles=list(graph.objects(subject=element_id, predicate=aida.handle)),
             informative_justifications=[
