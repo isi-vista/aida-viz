@@ -6,6 +6,7 @@ from immutablecollections import immutabledict
 from jinja2 import Template
 from rdflib import RDF, URIRef
 from rdflib.namespace import split_uri
+from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.documents import get_title_sentence, render_single_justification_document
@@ -34,6 +35,13 @@ class HtmlWriter:
         docs_dir = output_dir / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        total_justifications = sum(
+            [
+                len(e.informative_justifications) + len(e.justified_by)
+                for e in self.elements.values()
+            ]
+        )
+        pbar = tqdm(desc="parsing elements", total=total_justifications)
         for element in self.elements.values():
             all_justifications = (
                 element.informative_justifications + element.justified_by
@@ -64,6 +72,8 @@ class HtmlWriter:
                 )
                 justification_file.write_text(rendered_html)
 
+                pbar.update()
+
         html_file = output_dir / output_file_name
 
         html_lines = [
@@ -73,7 +83,10 @@ class HtmlWriter:
         ]
         element_list_by_type = defaultdict(list)
         for element in self.elements.values():
-            _, element_type = split_uri(element.element_type)
+            if element.element_type and "#" in element.element_type:
+                _, element_type = split_uri(element.element_type)
+            else:
+                element_type = element.element_type
             element_list_by_type[element_type].append(element)
 
         for element_type, element_list in element_list_by_type.items():
@@ -91,13 +104,19 @@ class HtmlWriter:
 
     def render_element(self, element: Element) -> str:
         html_lines = ["<div>"]
-        _, element_type = split_uri(element.element_type)
-        _, element_id = split_uri(element.element_id)
+        if element.element_type and "#" in element.element_type:
+            _, element_type = split_uri(element.element_type)
+        else:
+            element_type = element.element_type
+
+        if "#" in element.element_id:
+            _, element_id = split_uri(element.element_id)
+        else:
+            element_id = element.element_id
+
         justifications = element.informative_justifications + element.justified_by
 
-        element_anchor = (
-            f'<u><span id="{element_id}">{element_id} ({element_type})</span></u>'
-        )
+        element_anchor = f'<u><span id="{element.element_id}">{element_id} ({element_type})</span></u>'
 
         html_lines.append(
             f"{element_anchor}: {self.render_justifications(justifications)}"
@@ -186,5 +205,7 @@ class HtmlWriter:
     def anchor_link(self, element_id: URIRef) -> str:
         _, suffix = split_uri(element_id)
         return (
-            f"<a href=#{suffix}>{suffix}</a>" if element_id in self.elements else suffix
+            f"<a href=#{element_id}>{suffix}</a>"
+            if element_id in self.elements
+            else suffix
         )
