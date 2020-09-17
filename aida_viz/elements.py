@@ -1,4 +1,5 @@
-from typing import List, NamedTuple, Optional
+import json
+from typing import List, NamedTuple, Optional, Tuple
 
 from rdflib import RDF, Graph, Namespace, URIRef
 
@@ -115,6 +116,7 @@ class Justification(NamedTuple):
     child_id: Optional[str]
     span_start: int
     span_end: int
+    private_data: List[Tuple[str, str]] = []
 
     @staticmethod
     def from_uriref(justification_id: URIRef, *, graph: Graph):
@@ -139,6 +141,17 @@ class Justification(NamedTuple):
             subject=justification_id, predicate=aida.sourceDocument, any=False
         )
 
+        json_pairs = []
+
+        for private_data_node in graph.objects(
+            subject=justification_id, predicate=aida.privateData
+        ):
+            for literal in graph.objects(
+                subject=private_data_node, predicate=aida.jsonContent
+            ):
+                for pair in json.loads(str(literal)).items():
+                    json_pairs.append(pair)
+
         if span_start and span_end and (source or source_doc):
             return Justification(
                 justification_id=justification_id,
@@ -146,6 +159,7 @@ class Justification(NamedTuple):
                 parent_id=str(source_doc) if source_doc else None,
                 span_start=int(span_start),
                 span_end=int(span_end),
+                private_data=json_pairs,
             )
         else:
             raise ValueError(
