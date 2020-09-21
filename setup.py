@@ -6,7 +6,7 @@ setuptools.setup(
     name="aida_viz",
     version="0.1.0",
     author="USC Information Sciences Institute",
-    packages=["aida_viz"],
+    packages=setuptools.find_packages(exclude=['tests']),
     python_requires=">=3.8",
     install_requires=[
         "attrs==19.2.0",
