@@ -15,6 +15,8 @@ class Element(NamedTuple):
     informative_justifications: List["Justification"] = []
     justified_by: List["Justification"] = []
     statements: List["Statement"] = []
+    link_assertions: List["LinkAssertion"] = []
+    private_data: List[Tuple[str, str]] = []
 
     @staticmethod
     def from_uriref(element_id: URIRef, *, graph: Graph):
@@ -36,6 +38,10 @@ class Element(NamedTuple):
         ]
         statement_ids = list(graph.subjects(predicate=RDF.subject, object=element_id))
 
+        link_assertion_ids = list(
+            graph.objects(subject=element_id, predicate=aida.link)
+        )
+
         return Element(
             element_id=element_id,
             element_type=graph.value(subject=element_id, predicate=RDF.type, any=False),
@@ -56,6 +62,10 @@ class Element(NamedTuple):
                 Justification.from_uriref(j, graph=graph) for j in justifiedby_ids
             ],
             statements=[Statement.from_uriref(s, graph=graph) for s in statement_ids],
+            link_assertions=[
+                LinkAssertion.from_uriref(l, graph=graph) for l in link_assertion_ids
+            ],
+            private_data=private_data(element_id, graph=graph),
         )
 
 
@@ -141,17 +151,6 @@ class Justification(NamedTuple):
             subject=justification_id, predicate=aida.sourceDocument, any=False
         )
 
-        json_pairs = []
-
-        for private_data_node in graph.objects(
-            subject=justification_id, predicate=aida.privateData
-        ):
-            for literal in graph.objects(
-                subject=private_data_node, predicate=aida.jsonContent
-            ):
-                for pair in json.loads(str(literal)).items():
-                    json_pairs.append(pair)
-
         if span_start and span_end and (source or source_doc):
             return Justification(
                 justification_id=justification_id,
@@ -159,9 +158,49 @@ class Justification(NamedTuple):
                 parent_id=str(source_doc) if source_doc else None,
                 span_start=int(span_start),
                 span_end=int(span_end),
-                private_data=json_pairs,
+                private_data=private_data(justification_id, graph=graph),
             )
         else:
             raise ValueError(
                 f"{justification_id} requires span start and end, and one of source or source_doc"
             )
+
+
+class LinkAssertion(NamedTuple):
+    link_id: URIRef
+    link_confidence: float
+    link_target: str
+    link_system: URIRef
+
+    @staticmethod
+    def from_uriref(link_id: URIRef, *, graph):
+        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+
+        target = graph.value(subject=link_id, predicate=aida.linkTarget)
+        system = graph.value(subject=link_id, predicate=aida.system)
+        confidence = graph.value(
+            subject=graph.value(subject=link_id, predicate=aida.confidence),
+            predicate=aida.confidenceValue,
+        )
+
+        return LinkAssertion(
+            link_id=link_id,
+            link_confidence=float(confidence),
+            link_target=target,
+            link_system=system,
+        )
+
+
+def private_data(subject_id: URIRef, *, graph: Graph):
+    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    json_pairs = []
+    for private_data_node in graph.objects(
+        subject=subject_id, predicate=aida.privateData
+    ):
+        for literal in graph.objects(
+            subject=private_data_node, predicate=aida.jsonContent
+        ):
+            for pair in json.loads(str(literal)).items():
+                json_pairs.append(pair)
+
+    return json_pairs
