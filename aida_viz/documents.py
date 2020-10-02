@@ -163,6 +163,11 @@ def render_single_justification_document(
     span_start = justification.span_start
     span_end = justification.span_end
 
+    if not span_start or not span_end:
+        raise ValueError(
+            "Justification to render must have values for span_start and span_end."
+        )
+
     justification_spans: ImmutableDict[str, Span] = immutabledict(
         {f"{span_start}:{span_end}": Span(span_start, span_end + 1)}
     )

@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 
 from rdflib import RDF, Graph, Namespace
+from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
@@ -39,7 +40,11 @@ def main(
 
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
+        renderer.write_to_dir(
+            out_dir,
+            output_file_name=f"{aif_file.stem}.html",
+            pbar=tqdm(desc="parsing elements"),
+        )
     return out_dir
 
 

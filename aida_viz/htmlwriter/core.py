@@ -27,7 +27,10 @@ class HtmlWriter:
         }
 
     def write_to_dir(
-        self, output_dir: Path, output_file_name: str = "visualization.html"
+        self,
+        output_dir: Path,
+        output_file_name: str = "visualization.html",
+        pbar: Optional[tqdm] = None,
     ):
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
@@ -35,13 +38,6 @@ class HtmlWriter:
         docs_dir = output_dir / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
-        total_justifications = sum(
-            [
-                len(e.informative_justifications) + len(e.justified_by)
-                for e in self.elements.values()
-            ]
-        )
-        pbar = tqdm(desc="parsing elements", total=total_justifications)
         for element in self.elements.values():
             all_justifications = (
                 element.informative_justifications + element.justified_by
@@ -72,7 +68,8 @@ class HtmlWriter:
                 )
                 justification_file.write_text(rendered_html)
 
-                pbar.update()
+                if pbar:
+                    pbar.update()
 
         html_file = output_dir / output_file_name
 
@@ -195,11 +192,12 @@ class HtmlWriter:
             document_id = (
                 j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
             )
-            spanning_tokens = self.corpus[document_id]["fulltext"][
-                j.span_start : j.span_end + 1
-            ]
-            link = f'<a href=docs/{document_id}_{j.span_start}-{j.span_end}.html>"{spanning_tokens}" [{j.span_start}:{j.span_end}]</a>'
-            rendered_justifications.update([link])
+            if j.span_start and j.span_end:
+                spanning_tokens = self.corpus[document_id]["fulltext"][
+                    j.span_start : j.span_end + 1
+                ]
+                link = f'<a href=docs/{document_id}_{j.span_start}-{j.span_end}.html>"{spanning_tokens}" [{j.span_start}:{j.span_end}]</a>'
+                rendered_justifications.update([link])
         return ", ".join(rendered_justifications)
 
     def anchor_link(self, element_id: URIRef) -> str:

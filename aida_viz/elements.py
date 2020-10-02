@@ -124,8 +124,8 @@ class Justification(NamedTuple):
     justification_id: URIRef
     parent_id: Optional[str]
     child_id: Optional[str]
-    span_start: int
-    span_end: int
+    span_start: Optional[int]
+    span_end: Optional[int]
     private_data: List[Tuple[str, str]] = []
 
     @staticmethod
@@ -151,19 +151,14 @@ class Justification(NamedTuple):
             subject=justification_id, predicate=aida.sourceDocument, any=False
         )
 
-        if span_start and span_end and (source or source_doc):
-            return Justification(
-                justification_id=justification_id,
-                child_id=str(source) if source else None,
-                parent_id=str(source_doc) if source_doc else None,
-                span_start=int(span_start),
-                span_end=int(span_end),
-                private_data=private_data(justification_id, graph=graph),
-            )
-        else:
-            raise ValueError(
-                f"{justification_id} requires span start and end, and one of source or source_doc"
-            )
+        return Justification(
+            justification_id=justification_id,
+            child_id=str(source) if source else None,
+            parent_id=str(source_doc) if source_doc else None,
+            span_start=int(span_start) if span_start else None,
+            span_end=int(span_end) if span_end else None,
+            private_data=private_data(justification_id, graph=graph),
+        )
 
 
 class LinkAssertion(NamedTuple):
