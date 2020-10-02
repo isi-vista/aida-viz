@@ -6,7 +6,7 @@ import io
 import re
 from pathlib import Path
 from sqlite3 import Row, connect
-from typing import Iterable, List, Mapping, Optional, Pattern, Tuple
+from typing import Iterable, List, Mapping, Optional, Pattern, Tuple, Union
 from zipfile import Path as ZipPath
 from zipfile import ZipFile
 
@@ -19,8 +19,8 @@ from . import sqlite
 
 
 class Corpus:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
+    def __init__(self, db_path: Union[Path, str]):
+        self.db_path = Path(db_path)
 
     def __iter__(self):
         return self.query("SELECT * FROM documents")
