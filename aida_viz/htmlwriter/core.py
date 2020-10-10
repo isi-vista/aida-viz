@@ -42,7 +42,10 @@ class HtmlWriter:
             all_justifications = (
                 element.informative_justifications + element.justified_by
             )
-            for j in all_justifications:
+            renderable_justifications = [
+                j for j in all_justifications if j.span_start and j.span_end
+            ]
+            for j in renderable_justifications:
                 document_id = (
                     j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
                 )

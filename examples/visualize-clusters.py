@@ -33,22 +33,20 @@ def main(aif_file: Path, corpus_path: Path, out_dir: Path):
             for membership_id in membership_ids
         ]
 
-        if len(membership_elements) > 1:
+        entity_ids = [
+            m for membership in membership_elements for m in membership.members
+        ]
+        entity_elements = [
+            Element.from_uriref(entity_id, graph=graph) for entity_id in entity_ids
+        ]
 
-            entity_ids = [
-                m for membership in membership_elements for m in membership.members
-            ]
-            entity_elements = [
-                Element.from_uriref(entity_id, graph=graph) for entity_id in entity_ids
-            ]
+        element_by_id = {
+            e.element_id: e
+            for e in [cluster_element] + membership_elements + entity_elements
+        }
+        cluster_element_maps[cluster_id] = element_by_id
 
-            element_by_id = {
-                e.element_id: e
-                for e in [cluster_element] + membership_elements + entity_elements
-            }
-            cluster_element_maps[cluster_id] = element_by_id
-
-    for i, element_by_id in enumerate(cluster_element_maps.values()):
+    for i, element_by_id in tqdm(enumerate(cluster_element_maps.values()), desc='writing clusters to .html'):
         writer = HtmlWriter(corpus=corpus, elements=element_by_id)
         writer.write_to_dir(out_dir, f"{i:04}.html")
 
