@@ -43,7 +43,6 @@ def main(
         renderer.write_to_dir(
             out_dir,
             output_file_name=f"{aif_file.stem}.html",
-            pbar=tqdm(desc="parsing elements"),
         )
     return out_dir
 

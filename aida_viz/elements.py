@@ -3,6 +3,7 @@ from typing import List, NamedTuple, Optional, Tuple
 
 from rdflib import RDF, Graph, Namespace, URIRef
 
+from aida_viz.utils import aida_namespace
 
 class Element(NamedTuple):
     element_id: URIRef
@@ -21,7 +22,7 @@ class Element(NamedTuple):
     @staticmethod
     def from_uriref(element_id: URIRef, *, graph: Graph):
 
-        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        aida = aida_namespace(graph=graph)
 
         informativejustification_ids = [
             j
@@ -78,7 +79,7 @@ class Statement(NamedTuple):
 
     @staticmethod
     def from_uriref(statement_id: URIRef, *, graph: Graph):
-        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        aida = aida_namespace(graph=graph)
 
         statement_subject = graph.value(
             subject=statement_id, predicate=RDF.subject, any=False
@@ -130,7 +131,7 @@ class Justification(NamedTuple):
 
     @staticmethod
     def from_uriref(justification_id: URIRef, *, graph: Graph):
-        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        aida = aida_namespace(graph=graph)
 
         if not (justification_id, RDF.type, aida.TextJustification) in graph:
             raise ValueError(
@@ -169,7 +170,7 @@ class LinkAssertion(NamedTuple):
 
     @staticmethod
     def from_uriref(link_id: URIRef, *, graph):
-        aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+        aida = aida_namespace(graph=graph)
 
         target = graph.value(subject=link_id, predicate=aida.linkTarget)
         system = graph.value(subject=link_id, predicate=aida.system)
@@ -187,7 +188,7 @@ class LinkAssertion(NamedTuple):
 
 
 def private_data(subject_id: URIRef, *, graph: Graph):
-    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    aida = aida_namespace(graph=graph)
     json_pairs = []
     for private_data_node in graph.objects(
         subject=subject_id, predicate=aida.privateData
