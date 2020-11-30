@@ -1,4 +1,5 @@
-[![Build status](https://travis-ci.com/isi-vista/aida-viz.svg?branch=master)](https://travis-ci.com/isi-vista/aida-viz?branch=master)
+<!-- CI configuration disabled due to changes in Travis subscription model. Reactivate when issue has been resolved. -->
+<!-- [![Build status](https://travis-ci.com/isi-vista/aida-viz.svg?branch=master)](https://travis-ci.com/isi-vista/aida-viz?branch=master) -->
 
 # AIDA Vizualization Tools
 
