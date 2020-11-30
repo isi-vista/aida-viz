@@ -1,5 +1,6 @@
-from rdflib import Graph, Namespace
 from aida_interchange.rdf_ontologies import interchange_ontology
+from rdflib import Graph, Namespace
+
 
 def aida_namespace(graph: Graph):
     try:

@@ -2,12 +2,40 @@ import argparse
 from pathlib import Path
 
 from rdflib import RDF, Graph, Namespace
-from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
 from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
+
+USAGE = """Visualize AIDA AIF graphs (in RDF "turtle" format, extension .ttl) as explorable HTML pages."""
+
+
+def getargs():
+    parser = argparse.ArgumentParser(description=USAGE)
+    arg = parser.add_argument
+
+    arg("-a", "--aif_file", type=Path, help="AIF file to be visualized", required=True)
+    arg(
+        "-d",
+        "--db",
+        type=Path,
+        help="sqlite database containing the necessary documents for visualization.",
+        dest="db_path",
+        required=True,
+    )
+    arg(
+        "-o",
+        "--out",
+        type=Path,
+        help="Directory to output the visualization. Overwrites any files matching the naming scheme.",
+        dest="out_dir",
+        default="./visualizer_results",
+    )
+    arg("--by_clusters", action="store_true")
+    arg("--verbose", "-v", action="store_true")
+
+    return parser.parse_args()
 
 
 def main(
@@ -40,38 +68,13 @@ def main(
 
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(
-            out_dir,
-            output_file_name=f"{aif_file.stem}.html",
-        )
+        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
     return out_dir
 
 
 # pylint: disable=C0103
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Visualize ta3 output for AIDA")
-    parser.add_argument(
-        "-a", "--aif_file", type=Path, help="AIF file to be visualized", required=True
-    )
-    parser.add_argument(
-        "-d",
-        "--db",
-        type=Path,
-        help="sqlite database containing the necessary documents for visualization (default=$AIDA_HYPOTH_VIZ_DIR/databases/documents.sqlite)",
-        dest="db_path",
-        required=True,
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        type=Path,
-        help="Directory to output the visualization. Overwrites any files matching the naming scheme.",
-        dest="out_dir",
-        default="./visualizer_results",
-    )
-    parser.add_argument("--by_clusters", action="store_true")
-    parser.add_argument("--verbose", "-v", action="store_true")
-
-    output = main(**vars(parser.parse_args()))
+    args = getargs()
+    output = main(**vars(args))
 
     print(f"Vizualization: {output}")

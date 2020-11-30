@@ -1,9 +1,10 @@
 import json
 from typing import List, NamedTuple, Optional, Tuple
 
-from rdflib import RDF, Graph, Namespace, URIRef
+from rdflib import RDF, Graph, URIRef
 
 from aida_viz.utils import aida_namespace
+
 
 class Element(NamedTuple):
     element_id: URIRef

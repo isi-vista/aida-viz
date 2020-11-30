@@ -1,0 +1,20 @@
+# CI configuration disabled due to changes in Travis subscription model. Reactivate when issue has been resolved.
+
+# language: python
+# python:
+#     - "3.8"
+
+# cache:
+#     pip: true
+
+# install:
+#     - pip install .
+#     - pip install -r dev-requirements.txt
+
+# jobs:
+#     include:
+#         - stage: test
+#           script:
+#               - echo "python version $(python --version) running"
+#               - echo "pip version $(pip --version) running"
+#               - make check
