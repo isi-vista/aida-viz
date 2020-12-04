@@ -32,12 +32,44 @@ class HtmlWriter:
         output_file_name: str = "visualization.html",
         pbar: Optional[tqdm] = None,
     ):
+        self.write_docs_dir(output_dir / "docs", pbar)
+
+        html_file = output_dir / output_file_name
+
+        html_lines = [
+            "<html>",
+            '<head><link rel="stylesheet" href="style.css"></head>',
+            "<body>",
+        ]
+        element_list_by_type = defaultdict(list)
+        for element in self.elements.values():
+            if element.element_type and "#" in element.element_type:
+                _, element_type = split_uri(element.element_type)
+            else:
+                element_type = element.element_type
+            element_list_by_type[element_type].append(element)
+
+        for element_type, element_list in element_list_by_type.items():
+            html_lines.append(f"<h1>{element_type}</h1>")
+            for element in sorted(element_list, key=lambda e: e.element_id):
+                rendered_element_html = self.render_element(element)
+                html_lines.append(rendered_element_html)
+
+        html_lines.extend(["</html>", "</body>"])
+        rendered_html = "\n".join(html_lines)
+        html_file.write_text(rendered_html)
+
+    def write_docs_dir(
+        self,
+        output_dir: Path,
+        pbar: Optional[tqdm] = None,
+    ):
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
 
-        docs_dir = output_dir / "docs"
+        docs_dir = output_dir
         docs_dir.mkdir(parents=True, exist_ok=True)
-
+        
         for element in self.elements.values():
             all_justifications = (
                 element.informative_justifications + element.justified_by
@@ -73,35 +105,10 @@ class HtmlWriter:
 
                 if pbar:
                     pbar.update()
-
-        html_file = output_dir / output_file_name
-
-        html_lines = [
-            "<html>",
-            '<head><link rel="stylesheet" href="style.css"></head>',
-            "<body>",
-        ]
-        element_list_by_type = defaultdict(list)
-        for element in self.elements.values():
-            if element.element_type and "#" in element.element_type:
-                _, element_type = split_uri(element.element_type)
-            else:
-                element_type = element.element_type
-            element_list_by_type[element_type].append(element)
-
-        for element_type, element_list in element_list_by_type.items():
-            html_lines.append(f"<h1>{element_type}</h1>")
-            for element in sorted(element_list, key=lambda e: e.element_id):
-                rendered_element_html = self.render_element(element)
-                html_lines.append(rendered_element_html)
-
-        html_lines.extend(["</html>", "</body>"])
-        rendered_html = "\n".join(html_lines)
-        html_file.write_text(rendered_html)
-
+        
         style_file = output_dir / "style.css"
         style_file.write_text(STYLE)
-
+        
     def render_element(self, element: Element) -> str:
         html_lines = ["<div>"]
         if element.element_type and "#" in element.element_type:
