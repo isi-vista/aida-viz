@@ -49,6 +49,18 @@ Where:
 - `$AIDA_AIF_TTL` is the location of the AIF `.ttl` file that you would like to visualize.
 - `$RESULTS` is the **new** directory location where the results should be written.
 
+# Docker
+
+```
+$ echo set variables on host
+$ export $INPUT=path-to-file.ttl
+$ export $SQLITE=path-to-file.sqlite
+$ export $RESULTS=path-to-directory
+$ echo build docker image
+$ docker build . -t aida-viz
+$ echo run aida_viz module
+$ docker run -it -v $INPUT:$INPUT -v $RESULTS:$RESULTS -v $SQLITE:$SQLITE -e AIDA_AIF_TTL=$INPUT -e AIDA_CORPUS_SQLITE=$SQLITE -e RESULTS=$RESULTS --name viz-test aida-viz:latest /bin/bash -c "python -m aida_viz -a ${INPUT} -d ${SQLITE} -o ${RESULTS}"
+```
 
 # Contributing
 
