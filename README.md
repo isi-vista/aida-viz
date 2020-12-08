@@ -53,13 +53,19 @@ Where:
 
 ```
 $ echo set variables on host
-$ export $INPUT=path-to-file.ttl
-$ export $SQLITE=path-to-file.sqlite
-$ export $RESULTS=path-to-directory
+$ export INPUT=path-to-file.ttl
+$ export SQLITE=path-to-file.sqlite
+$ export RESULTS=path-to-directory
 $ echo build docker image
 $ docker build . -t aida-viz
-$ echo run aida_viz module
+$ echo run aida_viz module in a docker container
 $ docker run -it -v $INPUT:$INPUT -v $RESULTS:$RESULTS -v $SQLITE:$SQLITE -e AIDA_AIF_TTL=$INPUT -e AIDA_CORPUS_SQLITE=$SQLITE -e RESULTS=$RESULTS --name viz-test aida-viz:latest /bin/bash -c "python -m aida_viz -a ${INPUT} -d ${SQLITE} -o ${RESULTS}"
+```
+Run sequentially over a list of `*.ttl` files using the `run-batch.sh` script.
+```
+$ echo list all `*.ttl` files in a text file; find $(pwd) -file '*.ttl' &>> ttl-list-file.txt
+$ export TTL_LIST_FILE=path-to-ttl-list-file.txt
+$ ./run-batch.sh ${TTL_LIST_FILE} $SQLITE $RESULTS
 ```
 
 # Contributing
