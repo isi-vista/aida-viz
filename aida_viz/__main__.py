@@ -31,7 +31,7 @@ def getargs():
         type=Path,
         help="Directory to output the visualization. Overwrites any files matching the naming scheme.",
         dest="out_dir",
-        default="./visualizer_results",
+        default="./aida-viz-html",
     )
     arg("--by_clusters", action="store_true")
     arg("--verbose", "-v", action="store_true")
