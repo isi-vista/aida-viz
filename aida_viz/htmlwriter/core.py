@@ -35,18 +35,6 @@ class HtmlWriter:
         if self.output_dir.exists() and not self.output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
 
-        for element in self.elements.values():
-            all_justifications = (
-                element.informative_justifications + element.justified_by
-            )
-            renderable_justifications = [
-                j for j in all_justifications if j.span_start and j.span_end
-            ]
-            for j in renderable_justifications:
-                self.write_justification_context_html(j)
-                if pbar:
-                    pbar.update()
-
         html_file = self.output_dir / output_file_name
 
         html_lines = [
@@ -206,6 +194,8 @@ class HtmlWriter:
                 ]
                 link = f'<a href=docs/{document_id}_{j.span_start}-{j.span_end}.html>"{spanning_tokens}" [{j.span_start}:{j.span_end}]</a>'
                 rendered_justifications.update([link])
+                self.write_justification_context_html(j)
+
         return ", ".join(rendered_justifications)
 
     def anchor_link(self, element_id: URIRef) -> str:
