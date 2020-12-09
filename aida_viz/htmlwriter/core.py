@@ -6,7 +6,6 @@ from immutablecollections import immutabledict
 from jinja2 import Template
 from rdflib import RDF, URIRef
 from rdflib.namespace import split_uri
-from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.documents import get_title_sentence, render_single_justification_document
@@ -18,7 +17,12 @@ class HtmlWriter:
     corpus: Corpus
     elements: Dict[URIRef, Element]
 
-    def __init__(self, corpus: Corpus, elements: Dict[URIRef, Element], directory='./aida-viz-html'):
+    def __init__(
+        self,
+        corpus: Corpus,
+        elements: Dict[URIRef, Element],
+        directory="./aida-viz-html",
+    ):
         self.corpus = corpus
         self.elements = elements
         self.parent_child_map = {
@@ -27,11 +31,7 @@ class HtmlWriter:
         }
         self.output_dir: Path = directory
 
-    def write_to_dir(
-        self,
-        output_file_name: str = "visualization.html",
-        pbar: Optional[tqdm] = None,
-    ):
+    def write_to_dir(self, output_file_name: str = "visualization.html"):
         if self.output_dir.exists() and not self.output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
 
@@ -63,19 +63,14 @@ class HtmlWriter:
         style_file = self.output_dir / "style.css"
         style_file.write_text(STYLE)
 
-
     def write_justification_context_html(self, j: Justification):
         docs_dir = self.output_dir / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
-        document_id = (
-            j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
-        )
+        document_id = j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
         document = self.corpus[document_id]
 
-        justification_document_html = render_single_justification_document(
-            document, j
-        )
+        justification_document_html = render_single_justification_document(document, j)
 
         rendered_html = Template(TEMPLATE).render(
             document=immutabledict(
@@ -88,12 +83,9 @@ class HtmlWriter:
             )
         )
         justification_file = (
-            docs_dir
-            / f"{document['parent_id']}_{j.span_start}-{j.span_end}.html"
+            docs_dir / f"{document['parent_id']}_{j.span_start}-{j.span_end}.html"
         )
         justification_file.write_text(rendered_html)
-
-
 
     def render_element(self, element: Element) -> str:
         html_lines = ["<div>"]
