@@ -8,6 +8,7 @@ from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
 from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
+from aida_viz.prettyprinter.core import PrettyPrinter
 
 USAGE = """Visualize AIDA AIF graphs (in RDF "turtle" format, extension .ttl) as explorable HTML pages."""
 
@@ -70,6 +71,9 @@ def main(
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements, directory=out_dir)
         renderer.write_to_dir(output_file_name=f"{aif_file.stem}.html")
+        pretty_printer = PrettyPrinter(corpus, elements, directory=out_dir)
+        pretty_printer.write_to_dir(output_file_name=f"{aif_file.stem}.tsv")
+
     return out_dir
 
 
