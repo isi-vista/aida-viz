@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 
 from rdflib import RDF, Graph, Namespace
+from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
@@ -61,14 +62,13 @@ def main(
         clusters = list(graph.subjects(predicate=RDF.type, object=aida.SameAsCluster))
 
         element_ids = clusters + entities + events + relations
-        elements = {
-            element_id: Element.from_uriref(element_id, graph=graph)
-            for element_id in element_ids
-        }
+        elements = {}
+        for element_id in tqdm(element_ids):
+            elements[element_id] = Element.from_uriref(element_id, graph=graph)
 
         corpus = Corpus(db_path)
-        renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
+        renderer = HtmlWriter(corpus, elements, directory=out_dir)
+        renderer.write_to_dir(output_file_name=f"{aif_file.stem}.html")
     return out_dir
 
 
