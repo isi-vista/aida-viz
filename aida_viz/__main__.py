@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 
 from rdflib import RDF, Graph, Namespace
+from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
@@ -30,7 +31,7 @@ def getargs():
         type=Path,
         help="Directory to output the visualization. Overwrites any files matching the naming scheme.",
         dest="out_dir",
-        default="./visualizer_results",
+        default="./aida-viz-html",
     )
     arg("--by_clusters", action="store_true")
     arg("--verbose", "-v", action="store_true")
@@ -63,12 +64,12 @@ def main(
         element_ids = clusters + entities + events + relations
         elements = {
             element_id: Element.from_uriref(element_id, graph=graph)
-            for element_id in element_ids
+            for element_id in tqdm(element_ids)
         }
 
         corpus = Corpus(db_path)
-        renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
+        renderer = HtmlWriter(corpus, elements, directory=out_dir)
+        renderer.write_to_dir(output_file_name=f"{aif_file.stem}.html")
     return out_dir
 
 

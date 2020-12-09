@@ -6,7 +6,6 @@ from immutablecollections import immutabledict
 from jinja2 import Template
 from rdflib import RDF, URIRef
 from rdflib.namespace import split_uri
-from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.documents import get_title_sentence, render_single_justification_document
@@ -18,63 +17,25 @@ class HtmlWriter:
     corpus: Corpus
     elements: Dict[URIRef, Element]
 
-    def __init__(self, corpus: Corpus, elements: Dict[URIRef, Element]):
+    def __init__(
+        self,
+        corpus: Corpus,
+        elements: Dict[URIRef, Element],
+        directory="./aida-viz-html",
+    ):
         self.corpus = corpus
         self.elements = elements
         self.parent_child_map = {
             r["child_id"]: r["parent_id"]
             for r in self.corpus.query(f"SELECT parent_id, child_id FROM documents")
         }
+        self.output_dir: Path = directory
 
-    def write_to_dir(
-        self,
-        output_dir: Path,
-        output_file_name: str = "visualization.html",
-        pbar: Optional[tqdm] = None,
-    ):
-        if output_dir.exists() and not output_dir.is_dir():
+    def write_to_dir(self, output_file_name: str = "visualization.html"):
+        if self.output_dir.exists() and not self.output_dir.is_dir():
             raise ValueError("argument `output_dir` must be directory.")
 
-        docs_dir = output_dir / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-
-        for element in self.elements.values():
-            all_justifications = (
-                element.informative_justifications + element.justified_by
-            )
-            renderable_justifications = [
-                j for j in all_justifications if j.span_start and j.span_end
-            ]
-            for j in renderable_justifications:
-                document_id = (
-                    j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
-                )
-                document = self.corpus[document_id]
-
-                justification_document_html = render_single_justification_document(
-                    document, j
-                )
-
-                rendered_html = Template(TEMPLATE).render(
-                    document=immutabledict(
-                        {
-                            "id": document["parent_id"],
-                            "title": get_title_sentence(document["fulltext"]),
-                            "html": justification_document_html,
-                            "span": f"{j.span_start}:{j.span_end}",
-                        }
-                    )
-                )
-                justification_file = (
-                    docs_dir
-                    / f"{document['parent_id']}_{j.span_start}-{j.span_end}.html"
-                )
-                justification_file.write_text(rendered_html)
-
-                if pbar:
-                    pbar.update()
-
-        html_file = output_dir / output_file_name
+        html_file = self.output_dir / output_file_name
 
         html_lines = [
             "<html>",
@@ -99,8 +60,32 @@ class HtmlWriter:
         rendered_html = "\n".join(html_lines)
         html_file.write_text(rendered_html)
 
-        style_file = output_dir / "style.css"
+        style_file = self.output_dir / "style.css"
         style_file.write_text(STYLE)
+
+    def write_justification_context_html(self, j: Justification):
+        docs_dir = self.output_dir / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+        document_id = j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
+        document = self.corpus[document_id]
+
+        justification_document_html = render_single_justification_document(document, j)
+
+        rendered_html = Template(TEMPLATE).render(
+            document=immutabledict(
+                {
+                    "id": document["parent_id"],
+                    "title": get_title_sentence(document["fulltext"]),
+                    "html": justification_document_html,
+                    "span": f"{j.span_start}:{j.span_end}",
+                }
+            )
+        )
+        justification_file = (
+            docs_dir / f"{document['parent_id']}_{j.span_start}-{j.span_end}.html"
+        )
+        justification_file.write_text(rendered_html)
 
     def render_element(self, element: Element) -> str:
         html_lines = ["<div>"]
@@ -201,6 +186,8 @@ class HtmlWriter:
                 ]
                 link = f'<a href=docs/{document_id}_{j.span_start}-{j.span_end}.html>"{spanning_tokens}" [{j.span_start}:{j.span_end}]</a>'
                 rendered_justifications.update([link])
+                self.write_justification_context_html(j)
+
         return ", ".join(rendered_justifications)
 
     def anchor_link(self, element_id: URIRef) -> str:
