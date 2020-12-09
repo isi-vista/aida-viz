@@ -62,9 +62,10 @@ def main(
         clusters = list(graph.subjects(predicate=RDF.type, object=aida.SameAsCluster))
 
         element_ids = clusters + entities + events + relations
-        elements = {}
-        for element_id in tqdm(element_ids):
-            elements[element_id] = Element.from_uriref(element_id, graph=graph)
+        elements = {
+            element_id: Element.from_uriref(element_id, graph=graph)
+            for element_id in tqdm(element_ids)
+        }
 
         corpus = Corpus(db_path)
         renderer = HtmlWriter(corpus, elements, directory=out_dir)
