@@ -1,13 +1,14 @@
 import argparse
 from pathlib import Path
 
-from rdflib import RDF, Graph, Namespace
+from rdflib import RDF, Graph
 from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
 from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
+from aida_viz.utils import aida_namespace
 
 USAGE = """Visualize AIDA AIF graphs (in RDF "turtle" format, extension .ttl) as explorable HTML pages."""
 
@@ -44,7 +45,7 @@ def main(
 ) -> Path:
     graph: Graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
-    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    aida = aida_namespace(graph)
 
     if by_clusters:
         out_dir.mkdir(exist_ok=True)
