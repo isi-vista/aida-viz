@@ -10,8 +10,6 @@ from rdflib.namespace import split_uri
 from aida_viz.corpus.core import Corpus
 from aida_viz.documents import get_title_sentence, render_single_justification_document
 from aida_viz.elements import Element, Justification, Statement
-#from aida_viz.htmlwriter.resources import STYLE, TEMPLATE
-
 
 class PrettyPrinter:
     corpus: Corpus
@@ -36,12 +34,8 @@ class PrettyPrinter:
             raise ValueError("argument `output_dir` must be directory.")
 
         text_file = self.output_dir / output_file_name
-
-        text_lines = [
-            "a\tb",
-            'c\td',
-            " ",
-        ]
+# \t
+        text_lines = []
 
         element_list_by_type = defaultdict(list)
         for element in self.elements.values():
@@ -51,14 +45,18 @@ class PrettyPrinter:
                 element_type = element.element_type
             element_list_by_type[element_type].append(element)
 
+        text_lines.append(repr(element_list_by_type))
+
         for element_type, element_list in element_list_by_type.items():
-            text_lines.append(f"{element_type}")
+#            text_lines.append(f"{element_type}")
             for element in sorted(element_list, key=lambda e: e.element_id):
 #                rendered_element_html = self.render_element(element)
                 rendered_element_text = self.render_element(element)
                 text_lines.append(rendered_element_text)
+#                text_lines.append(f"{element_type}")
+#                text_lines.append(repr(element))
 
-        text_lines.extend(["y", "z\tzz"])
+#        text_lines.extend(["y", "z\tzz"])
         rendered_text = "\n".join(text_lines)
         text_file.write_text(rendered_text)
 
@@ -79,18 +77,17 @@ class PrettyPrinter:
 
         justifications = element.informative_justifications + element.justified_by
 
-        element_anchor = f'<u><span id="{element.element_id}">{element_id} ({element_type})</span></u>'
+        element_anchor = f'{element.element_id}\t{element_id}\t{element_type}'
+        text_lines.append(f"{element_anchor}")
 
-        text_lines.append(
-            f"{element_anchor}"
-        )
-
-        statement_list = self.render_statements(element.statements)
+#        statement_list = self.render_statements(element.statements)
+        if element.statements:
+            text_lines.append(self.render_statements(element.statements)) 
 
         return "\n".join(text_lines)
 
     def render_statements(self, statements: List[Statement]) -> str:
-        text_lines = ["", ""]
+        text_lines = []
 
         type_statements = [s for s in statements if s.predicate == RDF.type]
         nontype_statements = [s for s in statements if s.predicate != RDF.type]
