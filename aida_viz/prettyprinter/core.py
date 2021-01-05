@@ -34,7 +34,6 @@ class PrettyPrinter:
             raise ValueError("argument `output_dir` must be directory.")
 
         text_file = self.output_dir / output_file_name
-# \t
         text_lines = []
 
         element_list_by_type = defaultdict(list)
@@ -45,26 +44,17 @@ class PrettyPrinter:
                 element_type = element.element_type
             element_list_by_type[element_type].append(element)
 
-        text_lines.append(repr(element_list_by_type))
-
         for element_type, element_list in element_list_by_type.items():
-#            text_lines.append(f"{element_type}")
             for element in sorted(element_list, key=lambda e: e.element_id):
-#                rendered_element_html = self.render_element(element)
                 rendered_element_text = self.render_element(element)
                 text_lines.append(rendered_element_text)
-#                text_lines.append(f"{element_type}")
-#                text_lines.append(repr(element))
 
-#        text_lines.extend(["y", "z\tzz"])
         rendered_text = "\n".join(text_lines)
         text_file.write_text(rendered_text)
 
-#        style_file = self.output_dir / "style.css"
-#        style_file.write_text(STYLE)
-
     def render_element(self, element: Element) -> str:
-        text_lines = [""]
+        text_line = ""
+        statements = ""
         if element.element_type and "#" in element.element_type:
             _, element_type = split_uri(element.element_type)
         else:
@@ -76,15 +66,12 @@ class PrettyPrinter:
             element_id = element.element_id
 
         justifications = element.informative_justifications + element.justified_by
+        text_line = f"{element_type}\t{element.element_id}\t{element.prototypes}\t{element.members}\t{element.clusters}\t{element.names}\t{element.handles}\t{justifications}"
 
-        element_anchor = f'{element.element_id}\t{element_id}\t{element_type}'
-        text_lines.append(f"{element_anchor}")
-
-#        statement_list = self.render_statements(element.statements)
         if element.statements:
-            text_lines.append(self.render_statements(element.statements)) 
+            statements = self.render_statements(element.statements)
 
-        return "\n".join(text_lines)
+        return f"{text_line}\t{statements}"
 
     def render_statements(self, statements: List[Statement]) -> str:
         text_lines = []
@@ -102,9 +89,5 @@ class PrettyPrinter:
             text_lines.append(
                 f"{statement}"
             )
-
-        text_lines.append("{type_prefix}")
-        text_lines.append("{type_prefix}")
-        text_lines.append("")
 
         return "\n".join(text_lines)
