@@ -34,7 +34,7 @@ class PrettyPrinter:
             raise ValueError("argument `output_dir` must be directory.")
 
         text_file = self.output_dir / output_file_name
-        text_lines = []
+        text_lines = ["element_type\telement_id\tstatements\tjustifications\tprototypes\tmembers\tclusters\tnames\thandles\tjustification_details"]
 
         element_list_by_type = defaultdict(list)
         for element in self.elements.values():
@@ -66,12 +66,30 @@ class PrettyPrinter:
             element_id = element.element_id
 
         justifications = element.informative_justifications + element.justified_by
-        text_line = f"{element_type}\t{element.element_id}\t{element.prototypes}\t{element.members}\t{element.clusters}\t{element.names}\t{element.handles}\t{justifications}"
+        text_line = f"{self.render_justifications(justifications)}\t{element.prototypes}\t{element.members}\t{element.clusters}\t{element.names}\t{element.handles}\t{justifications}"
 
         if element.statements:
-            statements = self.render_statements(element.statements)
+            statements = self.render_statements(element.statements) 
 
-        return f"{text_line}\t{statements}"
+        return f"{element_type}\t{element.element_id}\t{statements}\t{text_line}"
+
+
+    def render_justifications(self, justifications: List[Justification]) -> str:
+        """Returns spanning text for a comma-separated list of justification links"""
+
+        rendered_justifications = set()
+        for j in justifications:
+            document_id = (
+                j.parent_id if j.parent_id else self.parent_child_map[j.child_id]
+            )
+            if j.span_start and j.span_end:
+                spanning_tokens = self.corpus[document_id]["fulltext"][
+                    j.span_start : j.span_end + 1
+                ]
+                rendered_justifications.update([spanning_tokens])
+#                self.write_justification_context_html(j)
+
+        return ", ".join(rendered_justifications)
 
     def render_statements(self, statements: List[Statement]) -> str:
         text_lines = []
@@ -83,11 +101,29 @@ class PrettyPrinter:
         if type_statements:
             type_statement = type_statements[0]
             _, type_prefix = split_uri(type_statement.object)
-            text_lines.append(f"{type_statement}")
+            text_lines.append(f"{self._render_statement(type_statement)}")
 
         for statement in nontype_statements:
             text_lines.append(
-                f"{statement}"
+                f"{self._render_statement(statement, type_prefix=type_prefix)}"
             )
 
-        return "\n".join(text_lines)
+        return ";; ".join(text_lines)
+
+    def _render_statement(
+        self, statement: Statement, type_prefix: Optional[str] = None
+    ) -> str:
+        _, pred = split_uri(statement.predicate)
+
+        if type_prefix:
+            pred = pred.replace(type_prefix, "")
+
+        return f"{pred}: {self.anchor_link(statement.object)} (Justified by {self.render_justifications(statement.justified_by)})"
+
+    def anchor_link(self, element_id: URIRef) -> str:
+        _, suffix = split_uri(element_id)
+        return (
+            f"{element_id} {suffix}"
+            if element_id in self.elements
+            else suffix
+        )
