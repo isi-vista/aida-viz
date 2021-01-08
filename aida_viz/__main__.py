@@ -1,12 +1,15 @@
 import argparse
 from pathlib import Path
 
-from rdflib import RDF, Graph, Namespace
+from rdflib import RDF, Graph
+from tqdm import tqdm
 
 from aida_viz.corpus.core import Corpus
 from aida_viz.elements import Element
 from aida_viz.htmlwriter.core import HtmlWriter
 from aida_viz.hypothesis import Hypothesis
+from aida_viz.prettyprinter.core import PrettyPrinter
+from aida_viz.utils import aida_namespace
 
 USAGE = """Visualize AIDA AIF graphs (in RDF "turtle" format, extension .ttl) as explorable HTML pages."""
 
@@ -30,7 +33,7 @@ def getargs():
         type=Path,
         help="Directory to output the visualization. Overwrites any files matching the naming scheme.",
         dest="out_dir",
-        default="./visualizer_results",
+        default="./aida-viz-html",
     )
     arg("--by_clusters", action="store_true")
     arg("--verbose", "-v", action="store_true")
@@ -43,7 +46,8 @@ def main(
 ) -> Path:
     graph: Graph = Graph()
     graph.parse(source=str(aif_file), format="turtle")
-    aida = Namespace(dict(graph.namespace_manager.namespaces())["aida"])
+    aida = aida_namespace(graph)
+    print(f"Starting visualization...")
 
     if by_clusters:
         out_dir.mkdir(exist_ok=True)
@@ -63,12 +67,14 @@ def main(
         element_ids = clusters + entities + events + relations
         elements = {
             element_id: Element.from_uriref(element_id, graph=graph)
-            for element_id in element_ids
+            for element_id in tqdm(element_ids)
         }
 
         corpus = Corpus(db_path)
-        renderer = HtmlWriter(corpus, elements)
-        renderer.write_to_dir(out_dir, output_file_name=f"{aif_file.stem}.html")
+        renderer = HtmlWriter(corpus, elements, directory=out_dir)
+        renderer.write_to_dir(output_file_name=f"{aif_file.stem}.html")
+        pretty_printer = PrettyPrinter(corpus, elements, directory=out_dir)
+        pretty_printer.write_to_dir(output_file_name=f"{aif_file.stem}.tsv")
     return out_dir
 
 
